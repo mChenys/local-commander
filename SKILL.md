@@ -238,6 +238,7 @@ python3 ~/.claude/skills/local-commander/local-commander.py --optimize  # 优化
 | `/local --system-info` | `python3 ~/.claude/skills/local-commander/local-commander.py --system-info` (显示系统信息) |
 | `/local --analyze --scan-depth deep` | `python3 ~/.claude/skills/local-commander/local-commander.py --analyze --scan-depth deep` (深度分析项目) |
 | `/local status` | `python3 ~/.claude/skills/local-commander/local-commander.py --status` |
+| `/local --help` | `python3 ~/.claude/skills/local-commander/local-commander.py --help` (显示详细帮助) |
 | `/local exit` | 结束会话（无需执行命令） |
 
 ## 自动路由关键词
@@ -445,3 +446,138 @@ mcp__local-commander-router__kb_delete({"id": "kb_xxx"})
 - **向量数据库**: ChromaDB (HNSW 索引)
 - **Embedding 模型**: BGE-M3 (1024 维向量)
 - **存储位置**: `~/.claude/knowledge_chroma/`
+
+---
+
+## 🆕 全平台 UI 自动化测试
+
+**Local Commander 现已支持 Web、桌面、Android、iOS 全平台 UI 自动化测试！**
+
+### 支持的平台
+
+| 平台 | 工具 | 依赖 |
+|------|------|------|
+| 🌐 Web/SPA | `ui_screenshot`, `ui_analyze_page`, `ui_test_pages` | Playwright |
+| 🖥️ macOS 原生窗口 | `native_window_list`, `native_window_query` | AppleScript |
+| 📱 Android | `android_screenshot`, `android_tap`, `android_run_test` | ADB |
+| 🍎 iOS 模拟器 | `ios_simulator_*` 系列工具 | Xcode |
+| 🍎 iOS 真机 | `ios_device_*` 系列工具 | libimobiledevice |
+| 🔗 API 测试 | `api_request`, `api_test_sequence` | requests |
+
+---
+
+### iOS 模拟器测试
+
+```python
+# 列出所有模拟器
+mcp__local-commander-router__ios_simulator_list({"state": "all"})  # all/booted/shutdown
+
+# 启动模拟器
+mcp__local-commander-router__ios_simulator_control({
+    "action": "boot",  # boot/shutdown/restart
+    "device": "iPhone 16 Pro"
+})
+
+# 截取模拟器屏幕
+mcp__local-commander-router__ios_simulator_screenshot({
+    "save_path": "/tmp/ios-screenshot.png"
+})
+
+# 模拟器操作
+mcp__local-commander-router__ios_simulator_action({
+    "action": "tap",  # tap/swipe/input/key
+    "x": 100,
+    "y": 200
+})
+
+# 应用管理
+mcp__local-commander-router__ios_simulator_app({
+    "action": "install",  # install/launch/uninstall
+    "app_path": "/path/to/App.app"
+})
+```
+
+### iOS 真机测试
+
+**先安装依赖：**
+```bash
+brew install libimobiledevice
+```
+
+```python
+# 列出连接的设备
+mcp__local-commander-router__ios_device_list({})
+
+# 截取真机屏幕
+mcp__local-commander-router__ios_device_screenshot({
+    "save_path": "/tmp/ios-device.png"
+})
+```
+
+---
+
+### macOS 原生窗口测试
+
+```python
+# 列出所有窗口
+mcp__local-commander-router__native_window_list({
+    "app_name": "Safari"  # 可选过滤
+})
+
+# 查询窗口元素
+mcp__local-commander-router__native_window_query({
+    "app_name": "Finder",
+    "query_type": "buttons"  # buttons/texts/checkboxes/menus/all
+})
+```
+
+---
+
+### API 测试
+
+```python
+# 单个 API 请求
+mcp__local-commander-router__api_request({
+    "method": "GET",
+    "url": "https://api.example.com/users",
+    "headers": {"Authorization": "Bearer xxx"},
+    "expected_status": 200
+})
+
+# API 测试序列
+mcp__local-commander-router__api_test_sequence({
+    "name": "用户流程测试",
+    "requests": [
+        {"method": "POST", "url": "/login", "body": {...}},
+        {"method": "GET", "url": "/profile"},
+        {"method": "DELETE", "url": "/logout"}
+    ],
+    "base_url": "https://api.example.com",
+    "stop_on_failure": true
+})
+```
+
+---
+
+### 完整测试平台架构
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    🎉 Local Commander MCP - 全平台 UI 自动化测试                 │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  🌐 Web/SPA          🖥️ 桌面应用          📱 Android          🍎 iOS            │
+│  ─────────────       ─────────────        ─────────────       ─────────────    │
+│  ✅ ui_screenshot    ✅ native_window_*   ✅ android_*        ✅ ios_simulator_* │
+│  ✅ ui_analyze_page  ✅ AppleScript       ✅ 截图              ✅ 模拟器控制       │
+│  ✅ ui_test_pages    ✅ 窗口元素查询       ✅ 点击              ✅ 应用管理         │
+│  ✅ VL 视觉分析                          ✅ 录制测试          ✅ ios_device_*    │
+│                                         ✅ VL 视觉分析       ✅ 真机截图         │
+│                                                                                 │
+│  🔗 API 测试          📊 测试报告                                            │
+│  ─────────────        ─────────────                                           │
+│  ✅ api_request       ✅ ui_generate_report                                   │
+│  ✅ api_test_sequence                                                          │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

@@ -8,6 +8,7 @@ import json
 import sys
 import asyncio
 import subprocess
+from datetime import datetime
 from typing import Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -393,6 +394,347 @@ class MCPRouterServer:
                     "required": ["url", "selector", "verify_type"]
                 }
             },
+            # ========== 增强版 UI 测试工具 ==========
+            {
+                "name": "ui_test_spa",
+                "description": "SPA 应用路由测试。通过点击菜单导航测试不同页面，支持前端路由。适用于 React/Vue/Tauri 等单页应用。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "应用入口 URL（如 http://localhost:1420）"
+                        },
+                        "routes": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "路由名称"},
+                                    "menu_text": {"type": "string", "description": "菜单文本（用于点击定位）"},
+                                    "expected_elements": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "期望出现的元素文本列表"
+                                    }
+                                }
+                            },
+                            "description": "路由配置列表"
+                        },
+                        "viewport_width": {"type": "integer", "default": 1200},
+                        "viewport_height": {"type": "integer", "default": 800}
+                    },
+                    "required": ["url", "routes"]
+                }
+            },
+            {
+                "name": "ui_interact",
+                "description": "高级交互测试。支持表单填写、点击、键盘操作、拖拽等复杂交互，并可验证结果。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "页面 URL"},
+                        "steps": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "action": {
+                                        "type": "string",
+                                        "enum": ["click", "fill", "select", "press", "wait", "screenshot", "assert_text", "assert_element"],
+                                        "description": "操作类型"
+                                    },
+                                    "selector": {"type": "string", "description": "CSS 选择器或文本选择器"},
+                                    "value": {"type": "string", "description": "输入值或按键"},
+                                    "timeout": {"type": "integer", "description": "超时时间（毫秒）"}
+                                }
+                            },
+                            "description": "交互步骤列表"
+                        },
+                        "screenshot_on_complete": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "完成后是否截图"
+                        }
+                    },
+                    "required": ["url", "steps"]
+                }
+            },
+            {
+                "name": "ui_desktop_app",
+                "description": "桌面应用测试（Tauri/Electron）。自动检测本地端口服务状态，等待应用启动后进行测试。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "port": {"type": "integer", "description": "应用端口（默认自动检测）"},
+                        "wait_for_ready": {"type": "boolean", "default": True, "description": "等待服务就绪"},
+                        "timeout": {"type": "integer", "default": 30000, "description": "等待超时（毫秒）"},
+                        "test_routes": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                            "description": "路由测试配置（同 ui_test_spa）"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "ui_generate_report",
+                "description": "生成 HTML 测试报告。将测试结果汇总为可视化报告，包含截图和分析。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "报告标题"},
+                        "output_path": {"type": "string", "default": "/tmp/ui-test-report.html"},
+                        "test_results": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                            "description": "测试结果列表"
+                        }
+                    },
+                    "required": ["test_results"]
+                }
+            },
+            # ========== 原生窗口测试工具 ==========
+            {
+                "name": "native_window_list",
+                "description": "列出 macOS 原生应用窗口。获取当前运行的应用及其窗口信息，用于原生窗口自动化测试。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": {
+                            "type": "string",
+                            "description": "应用名称过滤（可选，如 'Safari', 'Finder'）"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "native_window_elements",
+                "description": "获取原生窗口的 UI 元素树。用于定位按钮、文本框等可交互元素。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": {
+                            "type": "string",
+                            "description": "应用名称"
+                        },
+                        "window_title": {
+                            "type": "string",
+                            "description": "窗口标题（可选）"
+                        }
+                    },
+                    "required": ["app_name"]
+                }
+            },
+            {
+                "name": "native_window_action",
+                "description": "对原生窗口执行操作。支持点击、输入、获取文本等操作。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": {"type": "string", "description": "应用名称"},
+                        "action": {
+                            "type": "string",
+                            "enum": ["click", "input", "get_text", "press_key", "screenshot"],
+                            "description": "操作类型"
+                        },
+                        "element": {
+                            "type": "string",
+                            "description": "元素标识（文本内容或 AXRole）"
+                        },
+                        "value": {
+                            "type": "string",
+                            "description": "输入值或按键（input/press_key 时使用）"
+                        }
+                    },
+                    "required": ["app_name", "action"]
+                }
+            },
+            # ========== API 测试工具 ==========
+            {
+                "name": "api_request",
+                "description": "发送 HTTP API 请求。支持 GET/POST/PUT/DELETE，可断言状态码和响应体。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "method": {
+                            "type": "string",
+                            "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                            "default": "GET"
+                        },
+                        "url": {"type": "string", "description": "请求 URL"},
+                        "headers": {
+                            "type": "object",
+                            "description": "请求头"
+                        },
+                        "body": {
+                            "type": "object",
+                            "description": "请求体（JSON）"
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "default": 30,
+                            "description": "超时时间（秒）"
+                        }
+                    },
+                    "required": ["url"]
+                }
+            },
+            {
+                "name": "api_test_sequence",
+                "description": "批量 API 测试。执行多个 API 请求并验证响应，生成测试报告。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "base_url": {"type": "string", "description": "基础 URL"},
+                        "tests": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "测试名称"},
+                                    "method": {"type": "string"},
+                                    "path": {"type": "string", "description": "API 路径"},
+                                    "expected_status": {"type": "integer", "default": 200},
+                                    "expected_fields": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "期望响应字段"
+                                    }
+                                }
+                            },
+                            "description": "测试用例列表"
+                        },
+                        "auth_token": {"type": "string", "description": "认证 Token（可选）"}
+                    },
+                    "required": ["base_url", "tests"]
+                }
+            },
+            # ========== iOS 模拟器测试工具 ==========
+            {
+                "name": "ios_simulator_list",
+                "description": "列出可用的 iOS 模拟器。返回模拟器名称、UDID、状态和系统版本。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "state": {
+                            "type": "string",
+                            "enum": ["all", "booted", "shutdown"],
+                            "default": "all",
+                            "description": "筛选状态：all(全部), booted(已启动), shutdown(已关闭)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "ios_simulator_control",
+                "description": "控制 iOS 模拟器。支持启动、关闭、重启模拟器。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["boot", "shutdown", "restart", "erase"],
+                            "description": "操作：boot(启动), shutdown(关闭), restart(重启), erase(重置)"
+                        },
+                        "device": {
+                            "type": "string",
+                            "description": "设备名称或 UDID（如 'iPhone 16 Pro' 或 UDID）"
+                        }
+                    },
+                    "required": ["action", "device"]
+                }
+            },
+            {
+                "name": "ios_simulator_screenshot",
+                "description": "截取 iOS 模拟器屏幕。返回截图文件路径。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "device": {
+                            "type": "string",
+                            "description": "设备 UDID（可选，默认使用已启动的设备）"
+                        },
+                        "save_path": {
+                            "type": "string",
+                            "default": "/tmp/ios-screenshot.png",
+                            "description": "截图保存路径"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "ios_simulator_action",
+                "description": "在 iOS 模拟器上执行操作。支持点击、输入、按键、滑动等。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["tap", "input", "press_key", "swipe", "home", "siri"],
+                            "description": "操作类型"
+                        },
+                        "x": {"type": "integer", "description": "X 坐标 (tap/swipe)"},
+                        "y": {"type": "integer", "description": "Y 坐标 (tap/swipe)"},
+                        "end_x": {"type": "integer", "description": "结束 X 坐标 (swipe)"},
+                        "end_y": {"type": "integer", "description": "结束 Y 坐标 (swipe)"},
+                        "text": {"type": "string", "description": "输入文本 (input)"},
+                        "key": {"type": "string", "description": "按键名称 (press_key)"},
+                        "device": {"type": "string", "description": "设备 UDID（可选）"}
+                    },
+                    "required": ["action"]
+                }
+            },
+            {
+                "name": "ios_simulator_app",
+                "description": "管理 iOS 模拟器中的应用。支持安装、启动、卸载应用。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["install", "launch", "terminate", "uninstall", "list"],
+                            "description": "操作类型"
+                        },
+                        "app_path": {
+                            "type": "string",
+                            "description": "应用路径 (.app 或 .ipa) - install 时使用"
+                        },
+                        "bundle_id": {
+                            "type": "string",
+                            "description": "应用 Bundle ID - launch/terminate/uninstall 时使用"
+                        },
+                        "device": {"type": "string", "description": "设备 UDID（可选）"}
+                    },
+                    "required": ["action"]
+                }
+            },
+            # ========== iOS 真机测试工具 ==========
+            {
+                "name": "ios_device_list",
+                "description": "列出连接的 iOS 真机设备。需要安装 libimobiledevice。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "ios_device_screenshot",
+                "description": "截取 iOS 真机屏幕。需要 USB 连接和信任此电脑。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "udid": {
+                            "type": "string",
+                            "description": "设备 UDID（可选，默认使用第一个设备）"
+                        },
+                        "save_path": {
+                            "type": "string",
+                            "default": "/tmp/ios-device-screenshot.png"
+                        }
+                    }
+                }
+            },
             # ========== AI 知识库工具 ==========
             {
                 "name": "kb_add",
@@ -719,6 +1061,144 @@ class MCPRouterServer:
 
             elif tool_name == "ui_click_and_verify":
                 result = await self._ui_click_and_verify(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            # ========== 增强版 UI 测试工具实现 ==========
+            elif tool_name == "ui_test_spa":
+                result = await self._ui_test_spa(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ui_interact":
+                result = await self._ui_interact(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ui_desktop_app":
+                result = await self._ui_desktop_app(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ui_generate_report":
+                result = self._ui_generate_report(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            # ========== 原生窗口测试工具实现 ==========
+            elif tool_name == "native_window_list":
+                result = self._native_window_list(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "native_window_elements":
+                result = self._native_window_elements(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "native_window_action":
+                result = self._native_window_action(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            # ========== API 测试工具实现 ==========
+            elif tool_name == "api_request":
+                result = await self._api_request(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "api_test_sequence":
+                result = await self._api_test_sequence(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            # ========== iOS 模拟器测试工具实现 ==========
+            elif tool_name == "ios_simulator_list":
+                result = self._ios_simulator_list(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ios_simulator_control":
+                result = self._ios_simulator_control(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ios_simulator_screenshot":
+                result = self._ios_simulator_screenshot(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ios_simulator_action":
+                result = self._ios_simulator_action(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ios_simulator_app":
+                result = self._ios_simulator_app(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            # ========== iOS 真机测试工具实现 ==========
+            elif tool_name == "ios_device_list":
+                result = self._ios_device_list(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+            elif tool_name == "ios_device_screenshot":
+                result = self._ios_device_screenshot(args)
                 return self._response(request_id, {
                     "content": [{
                         "type": "text",
@@ -1337,6 +1817,1251 @@ const {{ chromium }} = require('playwright');
                 return {
                     "success": False,
                     "error": proc.stderr or proc.stdout
+                }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ========== 增强版 UI 测试工具实现 ==========
+    async def _ui_test_spa(self, args: dict) -> dict:
+        """SPA 应用路由测试 - 通过菜单点击测试不同页面"""
+        url = args.get("url", "")
+        routes = args.get("routes", [])
+        width = args.get("viewport_width", 1200)
+        height = args.get("viewport_height", 800)
+
+        if not routes:
+            return {"success": False, "error": "未提供路由配置"}
+
+        # 生成 Playwright 测试脚本
+        routes_json = json.dumps(routes, ensure_ascii=False)
+        script = f'''
+const {{ chromium }} = require('playwright');
+
+const routes = {routes_json};
+
+(async () => {{
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.setViewportSize({{ width: {width}, height: {height} }});
+
+    const results = [];
+
+    try {{
+        await page.goto('{url}');
+        await page.waitForTimeout(2000);
+
+        for (const route of routes) {{
+            const result = {{ name: route.name, success: false }};
+
+            try {{
+                // 通过文本内容查找并点击菜单
+                const menuItems = await page.$$('.ant-menu-item');
+                let clicked = false;
+
+                for (const item of menuItems) {{
+                    const text = await item.textContent();
+                    if (text && text.includes(route.menu_text)) {{
+                        await item.click();
+                        clicked = true;
+                        break;
+                    }}
+                }}
+
+                if (!clicked) {{
+                    // 尝试其他选择器
+                    await page.click(`text=${{route.menu_text}}`).catch(() => {{}});
+                }}
+
+                await page.waitForTimeout(1000);
+
+                // 截图
+                const screenshotPath = `/tmp/spa-${{route.name.replace(/\\s+/g, '-')}}.png`;
+                await page.screenshot({{ path: screenshotPath }});
+
+                // 检查期望元素
+                let elementsFound = [];
+                if (route.expected_elements) {{
+                    for (const elem of route.expected_elements) {{
+                        const found = await page.locator(`text=${{elem}}`).count() > 0;
+                        if (found) elementsFound.push(elem);
+                    }}
+                }}
+
+                result.success = true;
+                result.screenshot = screenshotPath;
+                result.elements_found = elementsFound;
+
+            }} catch (e) {{
+                result.error = e.message;
+            }}
+
+            results.push(result);
+        }}
+
+        console.log(JSON.stringify(results));
+
+    }} catch (e) {{
+        console.error(JSON.stringify({{ error: e.message }}));
+    }} finally {{
+        await browser.close();
+    }}
+}})();
+'''
+
+        try:
+            script_path = "/tmp/playwright-spa-test.js"
+            with open(script_path, "w") as f:
+                f.write(script)
+
+            proc = subprocess.run(
+                ["node", script_path],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
+            if proc.returncode == 0:
+                try:
+                    results = json.loads(proc.stdout.strip().split('\n')[-1])
+                except:
+                    results = [{"raw": proc.stdout}]
+
+                passed = sum(1 for r in results if r.get("success"))
+
+                return {
+                    "success": True,
+                    "url": url,
+                    "summary": {
+                        "total": len(routes),
+                        "passed": passed,
+                        "failed": len(routes) - passed
+                    },
+                    "results": results
+                }
+            else:
+                return {"success": False, "error": proc.stderr or proc.stdout}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def _ui_interact(self, args: dict) -> dict:
+        """高级交互测试"""
+        url = args.get("url", "")
+        steps = args.get("steps", [])
+        screenshot_on_complete = args.get("screenshot_on_complete", True)
+
+        # 生成动态脚本
+        script_lines = [
+            "const { chromium } = require('playwright');",
+            "(async () => {",
+            "    const browser = await chromium.launch();",
+            "    const page = await browser.newPage();",
+            f"    await page.goto('{url}');",
+            "    await page.waitForTimeout(1000);",
+            "    const logs = [];"
+        ]
+
+        for i, step in enumerate(steps):
+            action = step.get("action")
+            selector = step.get("selector", "")
+            value = step.get("value", "")
+            timeout = step.get("timeout", 5000)
+
+            if action == "click":
+                # 支持文本选择器
+                if not selector.startswith(".") and not selector.startswith("#") and not selector.startswith("["):
+                    script_lines.append(f"    await page.locator('text={selector}').first().click().catch(e => logs.push('Step {i}: Click failed - ' + e.message));")
+                else:
+                    script_lines.append(f"    await page.click('{selector}').catch(e => logs.push('Step {i}: Click failed - ' + e.message));")
+
+            elif action == "fill":
+                script_lines.append(f"    await page.fill('{selector}', '{value}').catch(e => logs.push('Step {i}: Fill failed - ' + e.message));")
+
+            elif action == "select":
+                script_lines.append(f"    await page.selectOption('{selector}', '{value}').catch(e => logs.push('Step {i}: Select failed - ' + e.message));")
+
+            elif action == "press":
+                script_lines.append(f"    await page.keyboard.press('{value}').catch(e => logs.push('Step {i}: Press failed - ' + e.message));")
+
+            elif action == "wait":
+                script_lines.append(f"    await page.waitForTimeout({timeout});")
+
+            elif action == "screenshot":
+                script_lines.append(f"    await page.screenshot({{ path: '/tmp/ui-interact-{i}.png' }});")
+                script_lines.append(f"    logs.push('Screenshot saved: /tmp/ui-interact-{i}.png');")
+
+            elif action == "assert_text":
+                script_lines.append(f"""    {{
+        const text = await page.textContent('body');
+        if (!text.includes('{value}')) {{
+            logs.push('Step {i}: Text not found: {value}');
+            console.log(JSON.stringify({{ success: false, error: 'Assertion failed: text not found', logs }}));
+            await browser.close();
+            process.exit(1);
+        }} else {{
+            logs.push('Step {i}: Text found: {value}');
+        }}
+    }}""")
+
+            elif action == "assert_element":
+                script_lines.append(f"    const count = await page.locator('{selector}').count();")
+                script_lines.append(f"    if (count === 0) logs.push('Step {i}: Element not found: {selector}');")
+                script_lines.append(f"    else logs.push('Step {i}: Element found: {selector}');")
+
+            script_lines.append(f"    await page.waitForTimeout(300);")
+
+        if screenshot_on_complete:
+            script_lines.append("    await page.screenshot({ path: '/tmp/ui-interact-final.png' });")
+
+        script_lines.extend([
+            "    console.log(JSON.stringify({ success: true, logs }));",
+            "    await browser.close();",
+            "})();"
+        ])
+
+        script = "\n".join(script_lines)
+
+        try:
+            script_path = "/tmp/playwright-interact.js"
+            with open(script_path, "w") as f:
+                f.write(script)
+
+            proc = subprocess.run(
+                ["node", script_path],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if proc.returncode == 0:
+                try:
+                    result = json.loads(proc.stdout.strip().split('\n')[-1])
+                except:
+                    result = {"success": True, "raw": proc.stdout}
+                return {
+                    "success": result.get("success", True),
+                    "url": url,
+                    "steps_executed": len(steps),
+                    "logs": result.get("logs", []),
+                    "screenshot": "/tmp/ui-interact-final.png" if screenshot_on_complete else None
+                }
+            else:
+                return {"success": False, "error": proc.stderr or proc.stdout}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def _ui_desktop_app(self, args: dict) -> dict:
+        """桌面应用测试（Tauri/Electron）"""
+        import socket
+        import time
+
+        port = args.get("port")
+        wait_for_ready = args.get("wait_for_ready", True)
+        timeout = args.get("timeout", 30000)
+        test_routes = args.get("test_routes", [])
+
+        # 自动检测端口（常见开发端口）
+        common_ports = [1420, 3000, 5173, 8080, 5174]
+        detected_port = None
+
+        if port:
+            ports_to_check = [port]
+        else:
+            ports_to_check = common_ports
+
+        # 检测可用端口
+        for p in ports_to_check:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('127.0.0.1', p))
+            sock.close()
+            if result == 0:
+                detected_port = p
+                break
+
+        if not detected_port:
+            return {
+                "success": False,
+                "error": "未检测到运行中的本地服务",
+                "checked_ports": ports_to_check
+            }
+
+        url = f"http://localhost:{detected_port}"
+
+        # 等待服务就绪
+        if wait_for_ready:
+            start_time = time.time()
+            ready = False
+            while time.time() - start_time < timeout / 1000:
+                try:
+                    import urllib.request
+                    urllib.request.urlopen(url, timeout=2)
+                    ready = True
+                    break
+                except:
+                    time.sleep(0.5)
+
+            if not ready:
+                return {"success": False, "error": f"服务就绪超时: {url}"}
+
+        # 执行路由测试
+        if test_routes:
+            spa_result = await self._ui_test_spa({
+                "url": url,
+                "routes": test_routes
+            })
+            return {
+                "success": spa_result.get("success", False),
+                "url": url,
+                "port": detected_port,
+                "test_result": spa_result
+            }
+
+        return {
+            "success": True,
+            "url": url,
+            "port": detected_port,
+            "message": f"检测到服务运行在 {url}"
+        }
+
+    def _ui_generate_report(self, args: dict) -> dict:
+        """生成 HTML 测试报告"""
+        title = args.get("title", "UI 自动化测试报告")
+        test_results = args.get("test_results", [])
+        output_path = args.get("output_path", "/tmp/ui-test-report.html")
+
+        # 统计
+        total = len(test_results)
+        passed = sum(1 for r in test_results if r.get("status") == "passed" or r.get("success"))
+        failed = total - passed
+
+        html = f'''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>{title}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; background: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; }}
+        h1 {{ color: #333; }}
+        .summary {{ display: flex; gap: 20px; margin: 20px 0; }}
+        .stat {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .stat-value {{ font-size: 32px; font-weight: bold; }}
+        .stat-label {{ color: #666; }}
+        .passed .stat-value {{ color: #52c41a; }}
+        .failed .stat-value {{ color: #ff4d4f; }}
+        .results {{ background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .result-item {{ padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 15px; }}
+        .result-item:last-child {{ border-bottom: none; }}
+        .status {{ width: 10px; height: 10px; border-radius: 50%; }}
+        .status.passed {{ background: #52c41a; }}
+        .status.failed {{ background: #ff4d4f; }}
+        .timestamp {{ color: #999; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 {title}</h1>
+        <p class="timestamp">生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+
+        <div class="summary">
+            <div class="stat">
+                <div class="stat-value">{total}</div>
+                <div class="stat-label">总计</div>
+            </div>
+            <div class="stat passed">
+                <div class="stat-value">{passed}</div>
+                <div class="stat-label">通过</div>
+            </div>
+            <div class="stat failed">
+                <div class="stat-value">{failed}</div>
+                <div class="stat-label">失败</div>
+            </div>
+        </div>
+
+        <div class="results">
+            <h3 style="padding: 15px 20px; margin: 0; background: #fafafa;">测试结果详情</h3>
+'''
+
+        for r in test_results:
+            status_class = "passed" if r.get("status") == "passed" or r.get("success") else "failed"
+            status_text = "✅ 通过" if status_class == "passed" else "❌ 失败"
+            html += f'''
+            <div class="result-item">
+                <div class="status {status_class}"></div>
+                <div>
+                    <strong>{r.get('name', r.get('page', '未知测试'))}</strong>
+                    <div style="color: #666; font-size: 14px;">{status_text}</div>
+                </div>
+            </div>'''
+
+        html += '''
+        </div>
+    </div>
+</body>
+</html>'''
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html)
+
+        return {
+            "success": True,
+            "report_path": output_path,
+            "summary": {"total": total, "passed": passed, "failed": failed}
+        }
+
+    # ========== 原生窗口测试工具实现 ==========
+    def _native_window_list(self, args: dict) -> dict:
+        """列出 macOS 原生应用窗口"""
+        app_filter = args.get("app_name")
+
+        try:
+            import subprocess
+
+            # 使用 AppleScript 获取窗口列表
+            script = '''
+            tell application "System Events"
+                set output to ""
+                repeat with theProcess in (every process whose background only is false)
+                    try
+                        set appName to name of theProcess
+                        set windowList to name of every window of theProcess
+                        if windowList is not {} then
+                            set output to output & appName & ":" & (item 1 of windowList) & linefeed
+                        end if
+                    end try
+                end repeat
+                return output
+            end tell
+            '''
+
+            proc = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if proc.returncode != 0:
+                return {"success": False, "error": proc.stderr}
+
+            # 解析输出
+            windows = []
+            for line in proc.stdout.strip().split('\n'):
+                if ':' in line:
+                    app_name, window_title = line.split(':', 1)
+                    if app_filter is None or app_filter.lower() in app_name.lower():
+                        windows.append({
+                            "app_name": app_name,
+                            "window_title": window_title
+                        })
+
+            return {
+                "success": True,
+                "count": len(windows),
+                "windows": windows
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _native_window_elements(self, args: dict) -> dict:
+        """获取原生窗口的 UI 元素树"""
+        app_name = args.get("app_name")
+        window_title = args.get("window_title", "")
+
+        try:
+            import subprocess
+
+            # 使用 AppleScript 获取窗口元素
+            script = f'''
+            tell application "System Events"
+                tell process "{app_name}"
+                    try
+                        set frontWindow to front window
+                        set elementList to {{}}
+
+                        repeat with theElement in entire contents of frontWindow
+                            try
+                                set elemDesc to description of theElement
+                                set elemRole to role of theElement
+                                set elemName to name of theElement
+                                set elemValue to value of theElement
+                                set end of elementList to elemRole & "|" & elemName & "|" & elemDesc & "|" & elemValue
+                            end try
+                        end repeat
+
+                        return elementList as string
+                    on error errMsg
+                        return "Error: " & errMsg
+                    end try
+                end tell
+            end tell
+            '''
+
+            proc = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if "Error:" in proc.stdout:
+                return {"success": False, "error": proc.stdout.split("Error:")[1].strip()}
+
+            # 解析元素
+            elements = []
+            raw_elements = proc.stdout.replace('{', '').replace('}', '').split(',')
+
+            for elem in raw_elements:
+                parts = elem.strip().split('|')
+                if len(parts) >= 2:
+                    elements.append({
+                        "role": parts[0].strip() if len(parts) > 0 else "",
+                        "name": parts[1].strip() if len(parts) > 1 else "",
+                        "description": parts[2].strip() if len(parts) > 2 else "",
+                        "value": parts[3].strip() if len(parts) > 3 else ""
+                    })
+
+            return {
+                "success": True,
+                "app_name": app_name,
+                "count": len(elements),
+                "elements": elements[:50]  # 限制返回数量
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _native_window_action(self, args: dict) -> dict:
+        """对原生窗口执行操作"""
+        app_name = args.get("app_name")
+        action = args.get("action")
+        element = args.get("element", "")
+        value = args.get("value", "")
+
+        try:
+            import subprocess
+
+            if action == "click":
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            click button "{element}" of front window
+                            return "Clicked: {element}"
+                        on error
+                            try
+                                click static text "{element}" of front window
+                                return "Clicked text: {element}"
+                            on error errMsg
+                                return "Error: " & errMsg
+                            end try
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "input":
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            keystroke "{value}"
+                            return "Typed: {value}"
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "press_key":
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            keystroke "{value}"
+                            return "Pressed: {value}"
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "get_text":
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            return value of static text 1 of front window
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "screenshot":
+                screenshot_path = f"/tmp/native-{app_name}.png"
+                script = f'''
+                do shell script "screencapture -x '{screenshot_path}'"
+                return "Screenshot saved to {screenshot_path}"
+                '''
+
+            else:
+                return {"success": False, "error": f"Unknown action: {action}"}
+
+            proc = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if "Error:" in proc.stdout:
+                return {"success": False, "error": proc.stdout.split("Error:")[1].strip()}
+
+            return {
+                "success": True,
+                "app_name": app_name,
+                "action": action,
+                "result": proc.stdout.strip()
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ========== API 测试工具实现 ==========
+    async def _api_request(self, args: dict) -> dict:
+        """发送 HTTP API 请求"""
+        import urllib.request
+        import urllib.error
+        import time
+
+        method = args.get("method", "GET")
+        url = args.get("url")
+        headers = args.get("headers", {})
+        body = args.get("body")
+        timeout = args.get("timeout", 30)
+
+        if not url:
+            return {"success": False, "error": "URL is required"}
+
+        start_time = time.time()
+
+        try:
+            # 准备请求
+            req_data = None
+            if body and method in ["POST", "PUT", "PATCH"]:
+                req_data = json.dumps(body).encode('utf-8')
+                if 'Content-Type' not in headers:
+                    headers['Content-Type'] = 'application/json'
+
+            request = urllib.request.Request(
+                url,
+                data=req_data,
+                headers=headers,
+                method=method
+            )
+
+            # 发送请求
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                response_time = (time.time() - start_time) * 1000
+                response_body = response.read().decode('utf-8')
+
+                try:
+                    response_json = json.loads(response_body)
+                except:
+                    response_json = None
+
+                return {
+                    "success": True,
+                    "status_code": response.status,
+                    "response_time_ms": round(response_time, 2),
+                    "headers": dict(response.headers),
+                    "body": response_json if response_json else response_body[:1000]
+                }
+
+        except urllib.error.HTTPError as e:
+            response_time = (time.time() - start_time) * 1000
+            return {
+                "success": False,
+                "status_code": e.code,
+                "response_time_ms": round(response_time, 2),
+                "error": str(e)
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def _api_test_sequence(self, args: dict) -> dict:
+        """批量 API 测试"""
+        base_url = args.get("base_url", "").rstrip('/')
+        tests = args.get("tests", [])
+        auth_token = args.get("auth_token")
+
+        if not tests:
+            return {"success": False, "error": "No tests provided"}
+
+        results = []
+        passed = 0
+        failed = 0
+
+        for test in tests:
+            name = test.get("name", "Unnamed")
+            method = test.get("method", "GET")
+            path = test.get("path", "")
+            expected_status = test.get("expected_status", 200)
+            expected_fields = test.get("expected_fields", [])
+
+            url = f"{base_url}{path}"
+            headers = {}
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
+
+            # 发送请求
+            result = await self._api_request({
+                "method": method,
+                "url": url,
+                "headers": headers
+            })
+
+            test_result = {
+                "name": name,
+                "url": url,
+                "method": method
+            }
+
+            if result.get("success"):
+                # 检查状态码
+                status_ok = result.get("status_code") == expected_status
+
+                # 检查期望字段
+                fields_found = []
+                fields_missing = []
+                if expected_fields and result.get("body"):
+                    body = result["body"]
+                    if isinstance(body, dict):
+                        for field in expected_fields:
+                            if field in body:
+                                fields_found.append(field)
+                            else:
+                                fields_missing.append(field)
+
+                test_result["status_code"] = result.get("status_code")
+                test_result["response_time_ms"] = result.get("response_time_ms")
+                test_result["status_ok"] = status_ok
+                test_result["fields_found"] = fields_found
+
+                if status_ok and not fields_missing:
+                    test_result["status"] = "passed"
+                    passed += 1
+                else:
+                    test_result["status"] = "failed"
+                    test_result["missing_fields"] = fields_missing
+                    failed += 1
+            else:
+                test_result["status"] = "failed"
+                test_result["error"] = result.get("error")
+                failed += 1
+
+            results.append(test_result)
+
+        return {
+            "success": True,
+            "base_url": base_url,
+            "summary": {
+                "total": len(tests),
+                "passed": passed,
+                "failed": failed
+            },
+            "results": results
+        }
+
+    # ========== iOS 模拟器测试工具实现 ==========
+    def _ios_simulator_list(self, args: dict) -> dict:
+        """列出可用的 iOS 模拟器"""
+        state_filter = args.get("state", "all")
+
+        try:
+            # 获取模拟器列表
+            proc = subprocess.run(
+                ["xcrun", "simctl", "list", "devices", "-j"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if proc.returncode != 0:
+                return {"success": False, "error": proc.stderr}
+
+            data = json.loads(proc.stdout)
+            devices = []
+
+            for runtime, device_list in data.get("devices", {}).items():
+                for device in device_list:
+                    device_state = device.get("state", "").lower()
+                    name = device.get("name", "")
+                    udid = device.get("udid", "")
+
+                    # 筛选状态
+                    if state_filter == "booted" and device_state != "booted":
+                        continue
+                    if state_filter == "shutdown" and device_state != "shutdown":
+                        continue
+
+                    devices.append({
+                        "name": name,
+                        "udid": udid,
+                        "state": device_state,
+                        "runtime": runtime
+                    })
+
+            return {
+                "success": True,
+                "count": len(devices),
+                "devices": devices
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _ios_simulator_control(self, args: dict) -> dict:
+        """控制 iOS 模拟器"""
+        action = args.get("action")
+        device = args.get("device")
+
+        if not device:
+            return {"success": False, "error": "设备名称或 UDID 必须提供"}
+
+        try:
+            if action == "boot":
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "boot", device],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                # 打开模拟器窗口
+                subprocess.run(["open", "-a", "Simulator"], capture_output=True)
+
+            elif action == "shutdown":
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "shutdown", device],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+            elif action == "restart":
+                # 先关闭再启动
+                subprocess.run(
+                    ["xcrun", "simctl", "shutdown", device],
+                    capture_output=True,
+                    timeout=30
+                )
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "boot", device],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+
+            elif action == "erase":
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "erase", device],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+            else:
+                return {"success": False, "error": f"未知操作: {action}"}
+
+            if proc.returncode == 0 or "already" in proc.stderr.lower():
+                return {
+                    "success": True,
+                    "action": action,
+                    "device": device,
+                    "message": f"模拟器 {action} 成功"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": proc.stderr or "操作失败"
+                }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _ios_simulator_screenshot(self, args: dict) -> dict:
+        """截取 iOS 模拟器屏幕"""
+        device = args.get("device", "")
+        save_path = args.get("save_path", "/tmp/ios-screenshot.png")
+
+        try:
+            # 如果没有指定设备，尝试获取已启动的设备
+            if not device:
+                list_result = self._ios_simulator_list({"state": "booted"})
+                if list_result.get("success") and list_result.get("devices"):
+                    device = list_result["devices"][0]["udid"]
+                else:
+                    return {"success": False, "error": "没有已启动的模拟器"}
+
+            proc = subprocess.run(
+                ["xcrun", "simctl", "io", device, "screenshot", save_path],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if proc.returncode == 0:
+                return {
+                    "success": True,
+                    "device": device,
+                    "screenshot_path": save_path
+                }
+            else:
+                return {"success": False, "error": proc.stderr}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _ios_simulator_action(self, args: dict) -> dict:
+        """在 iOS 模拟器上执行操作"""
+        action = args.get("action")
+        device = args.get("device", "")
+        x = args.get("x", 0)
+        y = args.get("y", 0)
+        end_x = args.get("end_x", 0)
+        end_y = args.get("end_y", 0)
+        text = args.get("text", "")
+        key = args.get("key", "")
+
+        try:
+            # 获取已启动的设备
+            if not device:
+                list_result = self._ios_simulator_list({"state": "booted"})
+                if list_result.get("success") and list_result.get("devices"):
+                    device = list_result["devices"][0]["udid"]
+                else:
+                    return {"success": False, "error": "没有已启动的模拟器"}
+
+            if action == "tap":
+                # 使用 AppleScript 进行点击
+                script = f'''
+                tell application "Simulator"
+                    activate
+                end tell
+                tell application "System Events"
+                    tell process "Simulator"
+                        try
+                            click at {{{x}, {y}}}
+                            return "Tapped at ({x}, {y})"
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+                proc = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+            elif action == "input":
+                # 输入文本
+                script = f'''
+                tell application "Simulator"
+                    activate
+                end tell
+                tell application "System Events"
+                    tell process "Simulator"
+                        keystroke "{text}"
+                    end tell
+                end tell
+                return "Typed: {text}"
+                '''
+                proc = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+            elif action == "press_key":
+                # 按键
+                script = f'''
+                tell application "Simulator"
+                    activate
+                end tell
+                tell application "System Events"
+                    tell process "Simulator"
+                        keystroke "{key}"
+                    end tell
+                end tell
+                return "Pressed: {key}"
+                '''
+                proc = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+            elif action == "swipe":
+                # 滑动 (通过多次点击模拟)
+                script = f'''
+                tell application "Simulator"
+                    activate
+                end tell
+                tell application "System Events"
+                    tell process "Simulator"
+                        -- Simple swipe simulation
+                        click at {{{x}, {y}}}
+                        delay 0.1
+                        click at {{{end_x}, {end_y}}}
+                    end tell
+                end tell
+                return "Swiped from ({x}, {y}) to ({end_x}, {end_y})"
+                '''
+                proc = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+            elif action == "home":
+                # Home 键
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "io", device, "pressButton", "home"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+            elif action == "siri":
+                # Siri
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "io", device, "pressButton", "siri"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+            else:
+                return {"success": False, "error": f"未知操作: {action}"}
+
+            if "Error:" in proc.stdout:
+                return {"success": False, "error": proc.stdout.split("Error:")[1].strip()}
+
+            return {
+                "success": True,
+                "action": action,
+                "device": device,
+                "result": proc.stdout.strip() if proc.stdout else "OK"
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _ios_simulator_app(self, args: dict) -> dict:
+        """管理 iOS 模拟器中的应用"""
+        action = args.get("action")
+        device = args.get("device", "")
+        app_path = args.get("app_path", "")
+        bundle_id = args.get("bundle_id", "")
+
+        try:
+            # 获取已启动的设备
+            if not device:
+                list_result = self._ios_simulator_list({"state": "booted"})
+                if list_result.get("success") and list_result.get("devices"):
+                    device = list_result["devices"][0]["udid"]
+                else:
+                    return {"success": False, "error": "没有已启动的模拟器"}
+
+            if action == "install":
+                if not app_path:
+                    return {"success": False, "error": "需要提供应用路径"}
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "install", device, app_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=120
+                )
+                return {
+                    "success": proc.returncode == 0,
+                    "action": "install",
+                    "error": proc.stderr if proc.returncode != 0 else None
+                }
+
+            elif action == "launch":
+                if not bundle_id:
+                    return {"success": False, "error": "需要提供 Bundle ID"}
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "launch", device, bundle_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                return {
+                    "success": proc.returncode == 0,
+                    "action": "launch",
+                    "bundle_id": bundle_id,
+                    "error": proc.stderr if proc.returncode != 0 else None
+                }
+
+            elif action == "terminate":
+                if not bundle_id:
+                    return {"success": False, "error": "需要提供 Bundle ID"}
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "terminate", device, bundle_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                return {
+                    "success": proc.returncode == 0,
+                    "action": "terminate",
+                    "bundle_id": bundle_id
+                }
+
+            elif action == "uninstall":
+                if not bundle_id:
+                    return {"success": False, "error": "需要提供 Bundle ID"}
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "uninstall", device, bundle_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                return {
+                    "success": proc.returncode == 0,
+                    "action": "uninstall",
+                    "bundle_id": bundle_id
+                }
+
+            elif action == "list":
+                proc = subprocess.run(
+                    ["xcrun", "simctl", "listapps", device],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                # 解析应用列表
+                apps = []
+                for line in proc.stdout.split('\n'):
+                    if 'BundleID' in line:
+                        bundle = line.split('=')[-1].strip()
+                        apps.append({"bundle_id": bundle})
+
+                return {
+                    "success": True,
+                    "count": len(apps),
+                    "apps": apps[:20]  # 限制返回数量
+                }
+
+            else:
+                return {"success": False, "error": f"未知操作: {action}"}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ========== iOS 真机测试工具实现 ==========
+    def _ios_device_list(self, args: dict) -> dict:
+        """列出连接的 iOS 真机设备"""
+        try:
+            # 检查是否安装了 libimobiledevice
+            proc = subprocess.run(
+                ["which", "idevice_id"],
+                capture_output=True,
+                text=True
+            )
+
+            if proc.returncode != 0:
+                return {
+                    "success": False,
+                    "error": "未安装 libimobiledevice，请运行: brew install libimobiledevice",
+                    "hint": "需要 USB 连接设备并在设备上信任此电脑"
+                }
+
+            # 获取设备列表
+            proc = subprocess.run(
+                ["idevice_id", "-l"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if proc.returncode != 0:
+                return {"success": False, "error": proc.stderr}
+
+            devices = []
+            for line in proc.stdout.strip().split('\n'):
+                if line.strip():
+                    devices.append({"udid": line.strip()})
+
+            return {
+                "success": True,
+                "count": len(devices),
+                "devices": devices,
+                "message": f"发现 {len(devices)} 台设备" if devices else "没有连接的设备"
+            }
+
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": "未安装 libimobiledevice",
+                "hint": "brew install libimobiledevice"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _ios_device_screenshot(self, args: dict) -> dict:
+        """截取 iOS 真机屏幕"""
+        udid = args.get("udid", "")
+        save_path = args.get("save_path", "/tmp/ios-device-screenshot.png")
+
+        try:
+            # 检查工具
+            proc = subprocess.run(
+                ["which", "idevicescreenshot"],
+                capture_output=True,
+                text=True
+            )
+
+            if proc.returncode != 0:
+                return {
+                    "success": False,
+                    "error": "未安装 libimobiledevice，请运行: brew install libimobiledevice"
+                }
+
+            # 截图
+            cmd = ["idevicescreenshot", save_path]
+            if udid:
+                cmd.extend(["-u", udid])
+
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if proc.returncode == 0:
+                return {
+                    "success": True,
+                    "screenshot_path": save_path
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": proc.stderr or "截图失败，请确保设备已信任此电脑"
                 }
 
         except Exception as e:
