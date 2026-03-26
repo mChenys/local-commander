@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "local-commander-router": {
+      "command": "python3",
+      "args": ["/Users/chenyousheng/.claude/skills/local-commander/lib/mcp_router.py"],
+      "env": {
+        "LOCAL_COMMANDER_PATH": "/Users/chenyousheng/.claude/skills/local-commander"
+      }
+    }
+  }
+}
