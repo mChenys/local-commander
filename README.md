@@ -13,14 +13,33 @@
 | 📚 AI 知识库 | BGE-M3 + ChromaDB | 持久化知识存储 |
 | 🧪 Web 自动化测试 | Playwright + VL | UI 自动化验收测试 |
 | 📱 Android 自动化 | ADB + VL | 无需 Appium 的 UI 测试 |
-| 🎯 VL 视觉定位 | Qwen3-VL-8B | 通过自然语言定位 UI 元素 |
+| 🎯 VL 视觉定位 | dump_ui → remote_vl → local_vl | 多级降级策略，精准定位 UI 元素 |
 | 🔄 代码审查流 | Coder + 27B | 生成 → 审查 → 修复 |
 
 ---
 
 ## ⚠️ VL 视觉定位服务配置说明
 
-**重要**：VL 视觉定位功能依赖远程 vLLM 服务，默认配置为公司内部服务器。
+**重要**：VL 视觉定位功能采用**多级降级策略**，优先使用 ADB Dump UI（精确可靠），其次使用远程 vLLM 服务（速度快），最后使用本地 MLX 模型（离线可用）。
+
+### 降级策略
+
+```
+dump_ui (ADB精确) → remote_vl (局域网VL) → local_vl (本地MLX)
+```
+
+| 方法 | 优先级 | 说明 |
+|------|--------|------|
+| `dump_ui` | 1 | ADB UI Dump，文本元素定位精确可靠 |
+| `remote_vl` | 2 | 局域网 vLLM 服务，速度快，坐标定位准确 |
+| `local_vl` | 3 | 本地 MLX 模型，无需网络，适合离线场景 |
+
+### 用途区分
+
+| 场景 | 推荐方法 | 原因 |
+|------|----------|------|
+| **坐标定位** | dump_ui → remote_vl | 精度高、速度快 |
+| **看截图内容** | remote_vl 或 local_vl | remote_vl 更快，local_vl 省token |
 
 ### 配置文件位置
 
@@ -34,11 +53,33 @@
 {
   "vl_grounding": {
     "enabled": true,
-    "base_url": "http://YOUR_SERVER_IP:8000/v1",  // ⚠️ 请修改为您的服务器地址
-    "model": "Qwen/Qwen3-VL-8B-Instruct",          // ⚠️ 请修改为您的模型名称
-    "api_key": "EMPTY",
     "timeout": 60,
-    "max_tokens": 2048
+    "max_tokens": 2048,
+    "temperature": 0.1,
+
+    "fallback_strategy": "dump_ui -> remote_vl -> local_vl",
+
+    "dump_ui": {
+      "enabled": true,
+      "priority": 1,
+      "_comment": "ADB UI Dump 优先，文本元素定位精确可靠"
+    },
+
+    "remote_vl": {
+      "enabled": true,
+      "priority": 2,
+      "base_url": "http://YOUR_SERVER_IP:8000/v1",  // ⚠️ 请修改
+      "model": "Qwen/Qwen3-VL-8B-Instruct",
+      "api_key": "EMPTY",
+      "timeout": 30
+    },
+
+    "local_vl": {
+      "enabled": true,
+      "priority": 3,
+      "model": "mlx-community/Qwen2.5-VL-7B-Instruct-bf16",
+      "timeout": 180
+    }
   }
 }
 ```
@@ -56,6 +97,15 @@ python -m vllm.entrypoints.openai.api_server \
     --model Qwen/Qwen3-VL-8B-Instruct \
     --host 0.0.0.0 \
     --port 8000
+```
+
+### 下载本地 VL 模型（可选）
+
+首次使用 `local_vl` 时会自动下载，或手动预下载：
+
+```bash
+# 下载 bf16 全精度版 (~15GB)
+python3 -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/Qwen2.5-VL-7B-Instruct-bf16')"
 ```
 
 ---
@@ -713,13 +763,16 @@ adb shell dumpsys activity activities | grep mResumedActivity
 │   ├── executor.py             # 任务执行器
 │   ├── embedder.py             # BGE-M3 向量化
 │   ├── knowledge_base_chroma.py # ChromaDB 知识库
+│   ├── vl_grounding.py         # VL 视觉定位服务 (多级降级策略)
+│   ├── image_preprocessor.py   # 图像预处理模块 (压缩、格式转换)
 │   ├── android_ui_automation.py # Android UI 自动化 (ADB 方案)
 │   └── testers/                # 自动化测试器
 │       ├── android_tester.py
 │       ├── ios_tester.py
 │       └── web_tester.py
 └── config/
-    └── models.json             # 模型配置
+    ├── models.json             # 模型配置
+    └── vl_service.json         # VL 视觉定位服务配置
 ```
 
 ---
@@ -764,18 +817,28 @@ playwright>=1.40.0
 
 ## 🎯 VL 视觉定位工具
 
-通过自然语言描述定位图像中的 UI 元素，返回坐标用于自动化测试。
+通过自然语言描述定位图像中的 UI 元素，返回坐标用于自动化测试。采用**多级降级策略**确保高精度定位。
 
 ### 技术原理
 
 ```
-截图 → Base64 编码 → Qwen3-VL 模型 → JSON 坐标输出 → 像素坐标转换
+截图 → 图像预处理 → 多级降级定位 → JSON 坐标输出
+         ↓
+   dump_ui (ADB精确) → remote_vl (局域网VL) → local_vl (本地MLX)
 ```
+
+### 降级策略说明
+
+| 方法 | 精度 | 速度 | 适用场景 |
+|------|------|------|----------|
+| `dump_ui` | ⭐⭐⭐⭐⭐ | ~100ms | 文本元素、标准 UI |
+| `remote_vl` | ⭐⭐⭐⭐ | ~0.6s | WebView、Canvas、图形元素 |
+| `local_vl` | ⭐⭐⭐ | ~30s | 离线场景 |
 
 ### MCP 调用
 
 ```python
-# 检测元素（返回边界框）
+# 检测元素（返回边界框）- 自动使用降级策略
 mcp__local-commander-router__vl_detect_element({
     "image_path": "/tmp/screenshot.png",
     "prompt": "屏幕中的登录按钮，通常为蓝色或白色的圆角矩形按钮"
@@ -792,7 +855,8 @@ mcp__local-commander-router__vl_detect_element({
             "confidence": 0.96
         }
     ],
-    "image_size": [1080, 2400]
+    "image_size": [1080, 2400],
+    "method": "remote_vl"  # 实际使用的方法
 }
 
 # 获取点击坐标（便捷方法）
@@ -809,6 +873,21 @@ mcp__local-commander-router__vl_get_click_coords({
     "label": "登录按钮",
     "confidence": 0.96
 }
+
+# 智能定位 - 优先 dump_ui，失败时降级到 VL
+mcp__local-commander-router__vl_smart_locate({
+    "image_path": "/tmp/screenshot.png",
+    "element_desc": "登录按钮",
+    "prefer_dump_ui": true
+})
+
+# 调试模式 - 可视化检测结果
+mcp__local-commander-router__vl_debug_detect({
+    "image_path": "/tmp/screenshot.png",
+    "prompt": "登录按钮",
+    "output_path": "/tmp/debug_result.png"
+})
+# 生成带标注的调试图片，便于验证定位准确性
 
 # 检查服务状态
 mcp__local-commander-router__vl_service_status({})
