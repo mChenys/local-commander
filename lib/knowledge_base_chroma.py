@@ -58,7 +58,7 @@ class KnowledgeBaseChroma:
     def embedder(self):
         """延迟加载 embedder"""
         if self._embedder is None:
-            from .embedder import get_embedder
+            from embedder import get_embedder
             self._embedder = get_embedder(backend="huggingface", model="bge-m3")
         return self._embedder
 

@@ -921,10 +921,10 @@ class MCPRouterServer:
                     "required": ["steps"]
                 }
             },
-            # ========== VL 视觉定位工具 ==========
+            # ========== VL 视觉定位工具（多级降级：remote_vl -> local_vl -> dump_ui）==========
             {
                 "name": "vl_detect_element",
-                "description": "使用 VL 视觉模型检测图像中的目标元素，返回边界框坐标。⚠️ 需要配置 vLLM 服务地址，详见 config/vl_service.json",
+                "description": "使用 VL 视觉模型检测图像中的目标元素。支持多级降级：remote_vl(局域网) -> local_vl(本地MLX) -> dump_ui(ADB)。自动选择最快可用方案。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -934,7 +934,12 @@ class MCPRouterServer:
                         },
                         "prompt": {
                             "type": "string",
-                            "description": "自然语言描述要检测的目标，如 '登录按钮'、'蓝色的提交按钮'、'显示用户名的文本框'"
+                            "description": "自然语言描述要检测的目标，如 '登录按钮'、'蓝色的提交按钮'"
+                        },
+                        "prefer_method": {
+                            "type": "string",
+                            "enum": ["remote_vl", "local_vl", "dump_ui"],
+                            "description": "优先使用的方法（可选），不指定则自动降级"
                         }
                     },
                     "required": ["image_path", "prompt"]
@@ -942,7 +947,7 @@ class MCPRouterServer:
             },
             {
                 "name": "vl_get_click_coords",
-                "description": "使用 VL 视觉模型获取可点击元素的坐标。⚠️ 需要配置 vLLM 服务地址，详见 config/vl_service.json",
+                "description": "使用 VL 视觉模型获取可点击元素的坐标。支持多级降级策略，自动选择最优方案。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -953,6 +958,11 @@ class MCPRouterServer:
                         "element_desc": {
                             "type": "string",
                             "description": "元素描述，如 '蓝色的登录按钮'、'右上角的设置图标'"
+                        },
+                        "prefer_method": {
+                            "type": "string",
+                            "enum": ["remote_vl", "local_vl", "dump_ui"],
+                            "description": "优先使用的方法（可选）"
                         }
                     },
                     "required": ["image_path", "element_desc"]
@@ -960,10 +970,58 @@ class MCPRouterServer:
             },
             {
                 "name": "vl_service_status",
-                "description": "检查 VL 视觉定位服务状态和配置信息。",
+                "description": "检查 VL 视觉定位服务状态。显示各服务（remote_vl/local_vl/dump_ui）的可用性。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {}
+                }
+            },
+            {
+                "name": "vl_smart_locate",
+                "description": "智能定位元素（参考 ACrab 策略：dump_ui 优先，更精确可靠）。适用于文本元素定位，如语言选项、按钮等。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "image_path": {
+                            "type": "string",
+                            "description": "截图文件路径"
+                        },
+                        "element_desc": {
+                            "type": "string",
+                            "description": "元素描述，如 'English'、'登录按钮'"
+                        },
+                        "prefer_dump_ui": {
+                            "type": "boolean",
+                            "description": "是否优先使用 dump_ui（默认 true）"
+                        },
+                        "debug": {
+                            "type": "boolean",
+                            "description": "是否保存调试图像（默认 false）"
+                        }
+                    },
+                    "required": ["image_path", "element_desc"]
+                }
+            },
+            {
+                "name": "vl_debug_detect",
+                "description": "检测元素并生成调试图像。在截图上绘制 bbox 和标签，用于调试验证定位结果。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "image_path": {
+                            "type": "string",
+                            "description": "截图文件路径"
+                        },
+                        "element_desc": {
+                            "type": "string",
+                            "description": "元素描述"
+                        },
+                        "output_path": {
+                            "type": "string",
+                            "description": "调试图像输出路径（可选，默认 /tmp/xxx_debug.jpg）"
+                        }
+                    },
+                    "required": ["image_path", "element_desc"]
                 }
             }
         ]
@@ -1359,6 +1417,24 @@ class MCPRouterServer:
 
             elif tool_name == "vl_service_status":
                 result = self._vl_service_status()
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            elif tool_name == "vl_smart_locate":
+                result = self._vl_smart_locate(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            elif tool_name == "vl_debug_detect":
+                result = self._vl_debug_detect(args)
                 return self._response(request_id, {
                     "content": [{
                         "type": "text",
@@ -3312,55 +3388,57 @@ const routes = {routes_json};
             return None
 
     def _vl_detect_element(self, args: dict) -> dict:
-        """使用 VL 模型检测图像中的目标元素"""
+        """使用 VL 模型检测图像中的目标元素（多级降级）"""
         try:
             service = self._get_vl_grounding_service()
-            if service is None or not service.is_available():
+            if service is None:
                 return {
                     "success": False,
-                    "error": "VL 服务不可用，请检查：1) 安装 openai 包 (pip install openai pillow) 2) 配置 config/vl_service.json"
+                    "error": "VL 服务不可用，请检查 lib/vl_grounding.py 是否存在"
                 }
 
             image_path = args.get("image_path")
             prompt = args.get("prompt")
+            prefer_method = args.get("prefer_method")  # 可选
 
             if not image_path:
                 return {"success": False, "error": "缺少 image_path 参数"}
             if not prompt:
                 return {"success": False, "error": "缺少 prompt 参数"}
 
-            result = service.detect_element(image_path, prompt)
+            result = service.detect_element(image_path, prompt, prefer_method)
             return result
 
         except Exception as e:
             return {"success": False, "error": str(e)}
 
     def _vl_get_click_coords(self, args: dict) -> dict:
-        """使用 VL 模型获取可点击元素的坐标"""
+        """使用 VL 模型获取可点击元素的坐标（多级降级）"""
         try:
             service = self._get_vl_grounding_service()
-            if service is None or not service.is_available():
+            if service is None:
                 return {
                     "success": False,
-                    "error": "VL 服务不可用，请检查：1) 安装 openai 包 (pip install openai pillow) 2) 配置 config/vl_service.json"
+                    "error": "VL 服务不可用，请检查 lib/vl_grounding.py 是否存在"
                 }
 
             image_path = args.get("image_path")
             element_desc = args.get("element_desc")
+            prefer_method = args.get("prefer_method")  # 可选
 
             if not image_path:
                 return {"success": False, "error": "缺少 image_path 参数"}
             if not element_desc:
                 return {"success": False, "error": "缺少 element_desc 参数"}
 
-            result = service.get_click_coords(image_path, element_desc)
+            result = service.get_click_coords(image_path, element_desc, prefer_method)
             return result
 
         except Exception as e:
             return {"success": False, "error": str(e)}
 
     def _vl_service_status(self) -> dict:
-        """检查 VL 服务状态"""
+        """检查 VL 服务状态（多级降级配置）"""
         try:
             service = self._get_vl_grounding_service()
             if service is None:
@@ -3370,22 +3448,65 @@ const routes = {routes_json};
                     "hint": "请确保 lib/vl_grounding.py 存在"
                 }
 
-            config = service.config
-            is_available = service.is_available()
-
-            return {
-                "available": is_available,
-                "config": {
-                    "base_url": config.get("base_url"),
-                    "model": config.get("model"),
-                    "timeout": config.get("timeout"),
-                    "max_tokens": config.get("max_tokens")
-                },
-                "hint": "⚠️ 如果使用公司内部服务，请修改 config/vl_service.json 中的 base_url 和 model" if is_available else "请检查服务配置或安装依赖 (pip install openai pillow)"
-            }
+            # 获取完整的服务状态
+            status = service.get_service_status()
+            return status
 
         except Exception as e:
             return {"available": False, "error": str(e)}
+
+    def _vl_smart_locate(self, args: dict) -> dict:
+        """智能定位元素（参考 ACrab 策略：dump_ui 优先）"""
+        try:
+            service = self._get_vl_grounding_service()
+            if service is None:
+                return {"success": False, "error": "VL Grounding 服务不可用"}
+
+            image_path = args.get("image_path")
+            element_desc = args.get("element_desc")
+            prefer_dump_ui = args.get("prefer_dump_ui", True)
+            debug = args.get("debug", False)
+
+            if not image_path or not element_desc:
+                return {"success": False, "error": "缺少 image_path 或 element_desc 参数"}
+
+            result = service.smart_locate(image_path, element_desc, prefer_dump_ui, debug)
+            return result
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _vl_debug_detect(self, args: dict) -> dict:
+        """检测元素并生成调试图像"""
+        try:
+            service = self._get_vl_grounding_service()
+            if service is None:
+                return {"success": False, "error": "VL Grounding 服务不可用"}
+
+            image_path = args.get("image_path")
+            element_desc = args.get("element_desc")
+            output_path = args.get("output_path")
+
+            if not image_path or not element_desc:
+                return {"success": False, "error": "缺少 image_path 或 element_desc 参数"}
+
+            # 使用 debug=True 进行检测
+            result = service.detect_element(image_path, element_desc, debug=True)
+
+            # 如果成功且有元素，生成调试图像
+            if result.get("success") and result.get("elements"):
+                if output_path is None:
+                    import os
+                    base_name = os.path.splitext(os.path.basename(image_path))[0]
+                    output_path = f"/tmp/{base_name}_debug.jpg"
+
+                service._save_debug_image(image_path, result["elements"], output_path)
+                result["debug_image"] = output_path
+
+            return result
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
 
 async def main():
