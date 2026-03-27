@@ -13,7 +13,50 @@
 | 📚 AI 知识库 | BGE-M3 + ChromaDB | 持久化知识存储 |
 | 🧪 Web 自动化测试 | Playwright + VL | UI 自动化验收测试 |
 | 📱 Android 自动化 | ADB + VL | 无需 Appium 的 UI 测试 |
+| 🎯 VL 视觉定位 | Qwen3-VL-8B | 通过自然语言定位 UI 元素 |
 | 🔄 代码审查流 | Coder + 27B | 生成 → 审查 → 修复 |
+
+---
+
+## ⚠️ VL 视觉定位服务配置说明
+
+**重要**：VL 视觉定位功能依赖远程 vLLM 服务，默认配置为公司内部服务器。
+
+### 配置文件位置
+
+```
+~/.claude/skills/local-commander/config/vl_service.json
+```
+
+### 配置示例
+
+```json
+{
+  "vl_grounding": {
+    "enabled": true,
+    "base_url": "http://YOUR_SERVER_IP:8000/v1",  // ⚠️ 请修改为您的服务器地址
+    "model": "Qwen/Qwen3-VL-8B-Instruct",          // ⚠️ 请修改为您的模型名称
+    "api_key": "EMPTY",
+    "timeout": 60,
+    "max_tokens": 2048
+  }
+}
+```
+
+### 部署 vLLM 服务（可选）
+
+如果您需要自己部署 vLLM 服务：
+
+```bash
+# 安装 vLLM
+pip install vllm
+
+# 启动服务
+python -m vllm.entrypoints.openai.api_server \
+    --model Qwen/Qwen3-VL-8B-Instruct \
+    --host 0.0.0.0 \
+    --port 8000
+```
 
 ---
 
@@ -719,9 +762,129 @@ playwright>=1.40.0
 
 ---
 
+## 🎯 VL 视觉定位工具
+
+通过自然语言描述定位图像中的 UI 元素，返回坐标用于自动化测试。
+
+### 技术原理
+
+```
+截图 → Base64 编码 → Qwen3-VL 模型 → JSON 坐标输出 → 像素坐标转换
+```
+
+### MCP 调用
+
+```python
+# 检测元素（返回边界框）
+mcp__local-commander-router__vl_detect_element({
+    "image_path": "/tmp/screenshot.png",
+    "prompt": "屏幕中的登录按钮，通常为蓝色或白色的圆角矩形按钮"
+})
+
+# 返回示例
+{
+    "success": true,
+    "elements": [
+        {
+            "label": "登录按钮",
+            "bbox": [120, 340, 280, 420],
+            "center": [200, 380],
+            "confidence": 0.96
+        }
+    ],
+    "image_size": [1080, 2400]
+}
+
+# 获取点击坐标（便捷方法）
+mcp__local-commander-router__vl_get_click_coords({
+    "image_path": "/tmp/screenshot.png",
+    "element_desc": "蓝色的登录按钮"
+})
+
+# 返回示例
+{
+    "success": true,
+    "x": 200,
+    "y": 380,
+    "label": "登录按钮",
+    "confidence": 0.96
+}
+
+# 检查服务状态
+mcp__local-commander-router__vl_service_status({})
+```
+
+### 与 Android 自动化结合
+
+```python
+# 1. 截图
+screenshot_result = mcp__local-commander-router__android_screenshot({
+    "save_path": "/tmp/screen.png"
+})
+
+# 2. VL 定位元素
+coords = mcp__local-commander-router__vl_get_click_coords({
+    "image_path": "/tmp/screen.png",
+    "element_desc": "设置按钮，通常是齿轮图标"
+})
+
+# 3. 点击
+if coords.get("success"):
+    mcp__local-commander-router__android_tap({
+        "x": coords["x"],
+        "y": coords["y"]
+    })
+```
+
+### 与 Web 自动化结合
+
+```python
+# 1. 网页截图
+mcp__local-commander-router__ui_screenshot({
+    "url": "http://localhost:3000/login",
+    "output_path": "/tmp/login.png"
+})
+
+# 2. VL 定位并点击
+coords = mcp__local-commander-router__vl_get_click_coords({
+    "image_path": "/tmp/login.png",
+    "element_desc": "提交按钮"
+})
+```
+
+### 支持的 Prompt 技巧
+
+| 技巧 | 示例 |
+|------|------|
+| 颜色描述 | "蓝色的登录按钮"、"红色的警告弹窗" |
+| 形状描述 | "圆角矩形按钮"、"圆形图标" |
+| 位置描述 | "右上角的设置图标"、"屏幕底部的导航栏" |
+| 文字描述 | "显示'提交'文字的按钮" |
+| 功能描述 | "用于搜索的输入框" |
+
+### 对比 Dump UI 方案
+
+| 维度 | Dump UI | VL 视觉定位 |
+|------|---------|------------|
+| **定位方式** | XML 属性匹配 | 视觉语义理解 |
+| **WebView** | ❌ | ✅ |
+| **游戏/Canvas** | ❌ | ✅ |
+| **无障碍标签缺失** | ❌ 无法定位 | ✅ 可识别 |
+| **推理延迟** | ~100ms | ~2-5s |
+| **依赖** | ADB | vLLM 服务 |
+
+---
+
 ## 常见问题
 
-### 1. 模型下载慢？
+### 1. VL 服务连接失败？
+
+检查 `config/vl_service.json` 中的 `base_url` 是否正确：
+- 确保服务器 IP 可访问
+- 确保端口正确（默认 8000）
+- 确保 vLLM 服务已启动
+
+### 2. 模型下载慢？
 
 ```bash
 # 使用镜像站

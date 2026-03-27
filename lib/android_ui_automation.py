@@ -72,8 +72,13 @@ class AndroidUIAutomation:
 
     # ========== 元素定位 ==========
 
-    def dump_ui(self) -> Dict[str, Any]:
-        """获取当前界面的 UI 层级"""
+    def dump_ui(self, include_all: bool = False) -> Dict[str, Any]:
+        """
+        获取当前界面的 UI 层级
+
+        Args:
+            include_all: 是否包含所有元素（包括不可点击的）
+        """
         # 导出 UI dump
         self._adb_shell("uiautomator", "dump", "/sdcard/ui.xml")
         # 拉取到本地
@@ -94,7 +99,7 @@ class AndroidUIAutomation:
         for node in root.iter():
             if node.tag == "node":
                 attrs = node.attrib
-                elements.append({
+                elem = {
                     "text": attrs.get("text", ""),
                     "content_desc": attrs.get("content-desc", ""),
                     "resource_id": attrs.get("resource-id", ""),
@@ -104,13 +109,84 @@ class AndroidUIAutomation:
                     "clickable": attrs.get("clickable", "") == "true",
                     "enabled": attrs.get("enabled", "") == "true",
                     "displayed": attrs.get("displayed", "") == "true",
-                })
+                }
+
+                # 只包含有内容的元素（文本、content_desc、resource_id）
+                has_content = elem["text"] or elem["content_desc"] or elem["resource_id"]
+                if include_all or has_content:
+                    elements.append(elem)
 
         return {
             "device": self.device_serial,
             "element_count": len(elements),
             "elements": elements
         }
+
+    def dump_all_elements(self) -> Dict[str, Any]:
+        """获取所有 UI 元素（包括不可点击的）"""
+        return self.dump_ui(include_all=True)
+
+    def find_elements_by_text(self, text: str, exact: bool = False) -> List[Dict]:
+        """
+        通过文本查找元素（包括不可点击的）
+
+        Args:
+            text: 要查找的文本
+            exact: 是否精确匹配，默认模糊匹配
+        """
+        ui = self.dump_ui(include_all=True)
+        if "error" in ui:
+            return []
+
+        results = []
+        for elem in ui["elements"]:
+            elem_text = elem.get("text", "")
+            if exact:
+                if elem_text == text:
+                    results.append(elem)
+            else:
+                if text in elem_text:
+                    results.append(elem)
+
+        return results
+
+    def find_elements_by_content(self, content_desc: str) -> List[Dict]:
+        """通过 content-desc 查找元素"""
+        ui = self.dump_ui(include_all=True)
+        if "error" in ui:
+            return []
+
+        return [e for e in ui["elements"]
+                if content_desc in e.get("content_desc", "")]
+
+    def smart_find(self, keyword: str) -> List[Dict]:
+        """
+        智能查找元素 - 同时搜索 text, content_desc, resource_id
+
+        Args:
+            keyword: 搜索关键词
+        """
+        ui = self.dump_ui(include_all=True)
+        if "error" in ui:
+            return []
+
+        results = []
+        keyword_lower = keyword.lower()
+        for elem in ui["elements"]:
+            # 搜索 text
+            if keyword_lower in elem.get("text", "").lower():
+                results.append(elem)
+                continue
+            # 搜索 content_desc
+            if keyword_lower in elem.get("content_desc", "").lower():
+                results.append(elem)
+                continue
+            # 搜索 resource_id
+            if keyword_lower in elem.get("resource_id", "").lower():
+                results.append(elem)
+                continue
+
+        return results
 
     def find_element(self, text: str = None, resource_id: str = None,
                      content_desc: str = None, class_name: str = None) -> Optional[Dict]:
@@ -171,16 +247,127 @@ class AndroidUIAutomation:
 
     def tap_element(self, text: str = None, resource_id: str = None,
                     content_desc: str = None, class_name: str = None) -> bool:
-        """点击元素 (通过属性定位)"""
+        """点击元素 (通过属性定位，包括不可点击的元素)"""
         elem = self.find_element(text, resource_id, content_desc, class_name)
         if not elem:
-            print(f"未找到元素: text={text}, id={resource_id}")
-            return False
+            # 尝试在所有元素中查找
+            elems = self.smart_find(text or resource_id or content_desc or "")
+            if elems:
+                elem = elems[0]
+            else:
+                print(f"未找到元素: text={text}, id={resource_id}")
+                return False
 
         bounds = elem.get("bounds", "")
         x, y = self.get_element_center(bounds)
         print(f"点击元素: {elem.get('text') or elem.get('resource_id')} at ({x}, {y})")
         return self.tap(x, y)
+
+    def smart_tap(self, keyword: str) -> bool:
+        """
+        智能点击 - 通过关键词查找并点击元素
+
+        Args:
+            keyword: 搜索关键词（匹配 text, content_desc, resource_id）
+        """
+        elems = self.smart_find(keyword)
+        if not elems:
+            print(f"未找到包含 '{keyword}' 的元素")
+            return False
+
+        # 优先选择可点击的元素
+        clickable = [e for e in elems if e.get("clickable")]
+        target = clickable[0] if clickable else elems[0]
+
+        bounds = target.get("bounds", "")
+        x, y = self.get_element_center(bounds)
+        print(f"智能点击 '{keyword}': {target.get('text', '')} at ({x}, {y})")
+        return self.tap(x, y)
+
+    def scroll_and_find(self, keyword: str, max_scrolls: int = 5,
+                        direction: str = "down") -> Optional[Dict]:
+        """
+        滚动查找元素
+
+        Args:
+            keyword: 搜索关键词
+            max_scrolls: 最大滚动次数
+            direction: 滚动方向 "down" 或 "up"
+
+        Returns:
+            找到的元素或 None
+        """
+        # 先检查当前屏幕
+        elems = self.smart_find(keyword)
+        if elems:
+            return elems[0]
+
+        # 滚动查找
+        screen_width = 540  # 默认屏幕中心
+        screen_height = 1200
+
+        for i in range(max_scrolls):
+            if direction == "down":
+                self.swipe(screen_width, screen_height + 300,
+                          screen_width, screen_height - 300)
+            else:
+                self.swipe(screen_width, screen_height - 300,
+                          screen_width, screen_height + 300)
+
+            time.sleep(0.5)
+
+            elems = self.smart_find(keyword)
+            if elems:
+                return elems[0]
+
+        return None
+
+    def scroll_and_tap(self, keyword: str, max_scrolls: int = 5,
+                       direction: str = "down") -> bool:
+        """
+        滚动查找并点击元素
+
+        Args:
+            keyword: 搜索关键词
+            max_scrolls: 最大滚动次数
+            direction: 滚动方向
+        """
+        elem = self.scroll_and_find(keyword, max_scrolls, direction)
+        if not elem:
+            print(f"滚动 {max_scrolls} 次后未找到 '{keyword}'")
+            return False
+
+        bounds = elem.get("bounds", "")
+        x, y = self.get_element_center(bounds)
+        print(f"滚动后点击 '{keyword}' at ({x}, {y})")
+        return self.tap(x, y)
+
+    def wait_for_element(self, keyword: str, timeout: int = 10) -> Optional[Dict]:
+        """
+        等待元素出现
+
+        Args:
+            keyword: 搜索关键词
+            timeout: 超时时间（秒）
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            elems = self.smart_find(keyword)
+            if elems:
+                return elems[0]
+            time.sleep(0.5)
+        return None
+
+    def assert_text_visible(self, text: str, timeout: int = 5) -> bool:
+        """
+        断言文本可见
+
+        Args:
+            text: 要检查的文本
+            timeout: 超时时间
+        """
+        elem = self.wait_for_element(text, timeout)
+        return elem is not None
 
     def screenshot(self, save_path: str = None) -> str:
         """截图"""
@@ -237,6 +424,9 @@ class AndroidUIAutomation:
         Args:
             steps: 测试步骤列表
                 [{"action": "tap", "element": {"text": "登录"}},
+                 {"action": "smart_tap", "keyword": "登录"},  # 新增：智能点击
+                 {"action": "scroll_and_tap", "keyword": "English"},  # 新增：滚动查找点击
+                 {"action": "assert_text", "text": "New Chat"},  # 新增：断言文本
                  {"action": "input", "text": "username"},
                  {"action": "screenshot", "save_path": "/tmp/step1.png"}]
 
@@ -258,6 +448,22 @@ class AndroidUIAutomation:
                     step_result["success"] = success
                     step_result["element"] = elem
 
+                elif action == "smart_tap":
+                    # 新增：智能点击
+                    keyword = step.get("keyword", "")
+                    success = self.smart_tap(keyword)
+                    step_result["success"] = success
+                    step_result["keyword"] = keyword
+
+                elif action == "scroll_and_tap":
+                    # 新增：滚动查找并点击
+                    keyword = step.get("keyword", "")
+                    direction = step.get("direction", "down")
+                    max_scrolls = step.get("max_scrolls", 5)
+                    success = self.scroll_and_tap(keyword, max_scrolls, direction)
+                    step_result["success"] = success
+                    step_result["keyword"] = keyword
+
                 elif action == "tap_coords":
                     x, y = step.get("x"), step.get("y")
                     success = self.tap(x, y)
@@ -270,8 +476,18 @@ class AndroidUIAutomation:
                     step_result["success"] = success
 
                 elif action == "swipe":
-                    x1, y1 = step.get("x1"), step.get("y1")
-                    x2, y2 = step.get("x2"), step.get("y2")
+                    # 支持简化滑动参数
+                    if "direction" in step:
+                        direction = step.get("direction")
+                        if direction == "up":
+                            x1, y1, x2, y2 = 540, 1500, 540, 800
+                        elif direction == "down":
+                            x1, y1, x2, y2 = 540, 800, 540, 1500
+                        else:
+                            x1, y1, x2, y2 = step.get("x1"), step.get("y1"), step.get("x2"), step.get("y2")
+                    else:
+                        x1, y1 = step.get("x1"), step.get("y1")
+                        x2, y2 = step.get("x2"), step.get("y2")
                     success = self.swipe(x1, y1, x2, y2)
                     step_result["success"] = success
 
@@ -294,6 +510,22 @@ class AndroidUIAutomation:
                     step_result["success"] = found
                     step_result["element"] = elem
 
+                elif action == "assert_text":
+                    # 新增：断言文本可见
+                    text = step.get("text", "")
+                    timeout = step.get("timeout", 5)
+                    success = self.assert_text_visible(text, timeout)
+                    step_result["success"] = success
+                    step_result["text"] = text
+
+                elif action == "wait_for_element":
+                    # 新增：等待元素出现
+                    keyword = step.get("keyword", "")
+                    timeout = step.get("timeout", 10)
+                    elem = self.wait_for_element(keyword, timeout)
+                    step_result["success"] = elem is not None
+                    step_result["keyword"] = keyword
+
                 elif action == "start_app":
                     package = step.get("package")
                     activity = step.get("activity")
@@ -306,7 +538,7 @@ class AndroidUIAutomation:
                 # 等待界面稳定
                 if step.get("wait_after", 0) > 0:
                     time.sleep(step["wait_after"])
-                elif action in ["tap", "tap_coords", "input", "back"]:
+                elif action in ["tap", "tap_coords", "smart_tap", "scroll_and_tap", "input", "back"]:
                     time.sleep(0.5)  # 默认等待
 
             except Exception as e:
