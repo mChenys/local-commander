@@ -401,15 +401,21 @@ install_dependencies() {
         # macOS 使用 Homebrew
         if [[ "$OS" == "Darwin" ]]; then
             if command -v brew &> /dev/null; then
-                start_spinner "brew install llama.cpp"
-                brew install llama.cpp >/dev/null 2>&1 || true
-                stop_spinner
+                echo -e "${YELLOW}提示: llama.cpp 需要编译，可能需要 10-20 分钟，请耐心等待...${NC}"
+                echo ""
+                # 不要静默输出，让用户看到编译进度
+                brew install llama.cpp 2>&1 | while IFS= read -r line; do
+                    # 只显示关键信息
+                    if [[ "$line" == *"Downloading"* ]] || [[ "$line" == *"Pouring"* ]] || [[ "$line" == *"make"* ]] || [[ "$line" == *"Error"* ]]; then
+                        echo "  $line"
+                    fi
+                done || true
 
                 if command -v llama-cli &> /dev/null; then
                     print_success "llama.cpp 安装完成"
                     HAS_LLAMACPP=true
                 else
-                    print_warning "llama.cpp 安装可能需要更多时间"
+                    print_warning "llama.cpp 安装可能需要更多时间，或失败了"
                 fi
             else
                 print_warning "未安装 Homebrew"
