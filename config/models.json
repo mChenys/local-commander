@@ -1,18 +1,28 @@
 {
+  "backend": "auto",
   "models": {
     "coder": {
       "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
       "alias": "coder",
       "memory_gb": 8,
       "use_cases": ["代码生成", "代码审查", "Bug诊断", "重构"],
-      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"]
+      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"],
+      "gguf": {
+        "repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+        "file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf"
+      }
     },
     "vl": {
       "id": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
       "alias": "vl",
       "memory_gb": 5,
       "use_cases": ["图像分析", "UI验证", "OCR", "截图分析"],
-      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"]
+      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"],
+      "gguf": {
+        "repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
+        "file": "MiniCPM-V-2_6-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf"
+      }
     },
     "reasoning": {
       "id": "/Users/chenyousheng/.omlx/models/MLX-Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-4bit",
@@ -21,7 +31,11 @@
       "use_cases": ["复杂推理", "架构设计", "方案评估", "深度分析", "算法实现"],
       "keywords": ["架构", "设计", "方案", "分析", "评估", "解释", "算法", "优化", "思考"],
       "features": ["thinking_mode", "moe", "claude_distilled"],
-      "description": "Qwen3.5-35B MoE Claude Opus 蒸馏版，最强推理模型"
+      "description": "Qwen3.5-35B MoE Claude Opus 蒸馏版，最强推理模型",
+      "gguf": {
+        "repo": "Qwen/Qwen2.5-14B-Instruct-GGUF",
+        "file": "qwen2.5-14b-instruct-q4_k_m.gguf"
+      }
     },
     "fast": {
       "id": "/Users/chenyousheng/.omlx/models/Qwen3-4B-Thinking-2507-GPT-5.1-Codex-Max-Distill-qx86-hi-mlx",
@@ -30,7 +44,11 @@
       "use_cases": ["快速对话", "简单代码", "代码片段"],
       "keywords": ["你好", "您好", "hello", "hi", "谢谢", "快速", "简单", "片段"],
       "features": ["thinking_mode", "gpt5_distilled"],
-      "description": "Qwen3-4B GPT-5.1 Codex 蒸馏版，加载最快"
+      "description": "Qwen3-4B GPT-5.1 Codex 蒸馏版，加载最快",
+      "gguf": {
+        "repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+        "file": "qwen2.5-7b-instruct-q4_k_m.gguf"
+      }
     }
   },
   "default_model": "coder",
@@ -38,5 +56,17 @@
     "fast_models": ["fast", "coder"],
     "reasoning_models": ["reasoning"],
     "code_models": ["coder", "reasoning"]
+  },
+  "backend_config": {
+    "mlx": {
+      "command_text": "mlx_lm.generate",
+      "command_vision": "mlx_vlm.generate",
+      "cache_dir": "~/.cache/huggingface/hub"
+    },
+    "llamacpp": {
+      "command": "llama-cli",
+      "cache_dir": "~/.cache/huggingface/hub",
+      "default_args": ["-ngl", "0", "-c", "4096", "--no-display-prompt"]
+    }
   }
 }

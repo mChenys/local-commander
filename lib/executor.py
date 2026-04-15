@@ -1,5 +1,6 @@
 """
 任务执行器 - 调用本地模型执行任务，支持智能代码修改和自动化测试
+支持 MLX 和 llama.cpp 双后端
 """
 
 import subprocess
@@ -16,6 +17,14 @@ except ImportError:
     TEST_EXECUTOR_AVAILABLE = False
     print("警告: 测试器模块不可用，将跳过自动化测试")
 
+# 导入后端
+try:
+    from .backends import get_backend, detect_backend
+    BACKEND_AVAILABLE = True
+except ImportError:
+    BACKEND_AVAILABLE = False
+    print("警告: 后端模块不可用，将使用传统模式")
+
 
 class TaskExecutor:
     """任务执行器，负责调用本地模型并智能处理代码"""
@@ -26,11 +35,13 @@ class TaskExecutor:
     DEFAULT_CONTEXT_LINES = 300  # 每个文件读更多行（从100增加到300）
     DEFAULT_TEMPERATURE = 0.0
 
-    def __init__(self):
+    def __init__(self, config: Optional[dict] = None):
         self.max_tokens = self.DEFAULT_MAX_TOKENS
         self.temperature = self.DEFAULT_TEMPERATURE
         self._file_ops = None
         self._analyzer = None
+        self._backend = None
+        self.config = config or {}
 
     def _get_file_ops(self):
         """懒加载文件操作"""
@@ -46,25 +57,17 @@ class TaskExecutor:
             self._analyzer = get_analyzer()
         return self._analyzer
 
-    def execute(
-        self,
-        model_id: str,
-        prompt: str,
-        image_path: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        """执行任务"""
-        max_tokens = max_tokens or self.max_tokens
-        temperature = temperature if temperature is not None else self.temperature
+    def _get_backend(self):
+        """懒加载后端"""
+        if self._backend is None and BACKEND_AVAILABLE:
+            self._backend = get_backend(self.config)
+        return self._backend
 
-        # 判断是视觉模型还是文本模型
-        is_vl_model = "VL" in model_id or "vl" in model_id
-
-        if is_vl_model and image_path:
-            return self._execute_vl(model_id, prompt, image_path, max_tokens, temperature)
-        else:
-            return self._execute_lm(model_id, prompt, max_tokens, temperature)
+    def get_backend_type(self) -> str:
+        """获取当前后端类型"""
+        if BACKEND_AVAILABLE:
+            return detect_backend()
+        return "mlx"  # 传统模式默认 MLX
 
     def execute_with_context(
         self,
@@ -341,7 +344,17 @@ Analyze the code and provide modifications in JSON format.
         max_tokens: int,
         temperature: float
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        """执行文本模型"""
+        """执行文本模型 - 支持双后端"""
+        # 尝试使用新后端
+        backend = self._get_backend()
+        if backend:
+            return backend.execute(
+                model_id, prompt,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+
+        # 传统 MLX 模式 (fallback)
         cmd = [
             "mlx_lm.generate",
             "--model", model_id,
@@ -352,7 +365,8 @@ Analyze the code and provide modifications in JSON format.
 
         metadata = {
             "model": model_id,
-            "type": "text"
+            "type": "text",
+            "backend": "mlx"
         }
 
         try:
@@ -382,7 +396,16 @@ Analyze the code and provide modifications in JSON format.
         max_tokens: int,
         temperature: float
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        """执行视觉模型"""
+        """执行视觉模型 - 支持双后端"""
+        # 尝试使用新后端
+        backend = self._get_backend()
+        if backend:
+            return backend.execute_vision(
+                model_id, prompt, image_path,
+                max_tokens=max_tokens
+            )
+
+        # 传统 MLX 模式 (fallback)
         cmd = [
             "mlx_vlm.generate",
             "--model", model_id,
@@ -394,7 +417,8 @@ Analyze the code and provide modifications in JSON format.
         metadata = {
             "model": model_id,
             "image": image_path,
-            "type": "vision"
+            "type": "vision",
+            "backend": "mlx"
         }
 
         try:

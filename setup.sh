@@ -2,6 +2,7 @@
 #
 # Local Commander - 一键安装脚本
 # 自动检测系统配置并安装最佳模型组合
+# 支持 Apple Silicon (MLX) 和 Intel Mac (llama.cpp)
 #
 # 兼容 bash 3.x+ (macOS 默认 bash)
 #
@@ -22,6 +23,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$HOME/.claude/skills/local-commander"
 HF_CACHE="$HOME/.cache/huggingface/hub"
 HAS_MLX=false
+HAS_LLAMACPP=false
+BACKEND=""
+
+# GGUF 模型配置 (用于 Intel Mac)
+GGUF_MODELS="{
+  \"coder\": {
+    \"repo\": \"Qwen/Qwen2.5-Coder-14B-Instruct-GGUF\",
+    \"file\": \"qwen2.5-coder-14b-instruct-q4_k_m.gguf\",
+    \"size\": 9
+  },
+  \"fast\": {
+    \"repo\": \"Qwen/Qwen2.5-7B-Instruct-GGUF\",
+    \"file\": \"qwen2.5-7b-instruct-q4_k_m.gguf\",
+    \"size\": 5
+  },
+  \"vl\": {
+    \"repo\": \"mobiuslabsgmbh/MiniCPM-V-2_6-gguf\",
+    \"file\": \"MiniCPM-V-2_6-Q4_K_M.gguf\",
+    \"mmproj\": \"mmproj-model-f16.gguf\",
+    \"size\": 5
+  }
+}"
 
 # 获取模型大小 (兼容 bash 3.x)
 get_model_size() {
@@ -34,7 +57,17 @@ get_model_size() {
     esac
 }
 
-# 获取模型 ID (兼容 bash 3.x)
+# 获取 GGUF 模型大小
+get_gguf_model_size() {
+    case "$1" in
+        coder) echo "9" ;;
+        fast)  echo "5" ;;
+        vl)    echo "5" ;;
+        *)     echo "0" ;;
+    esac
+}
+
+# 获取模型 ID (兼容 bash 3.x) - MLX
 get_model_id() {
     case "$1" in
         coder) echo "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit" ;;
@@ -45,12 +78,23 @@ get_model_id() {
     esac
 }
 
+# 获取 GGUF 模型信息
+get_gguf_model_info() {
+    case "$1" in
+        coder) echo "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF|qwen2.5-coder-14b-instruct-q4_k_m.gguf" ;;
+        fast)  echo "Qwen/Qwen2.5-7B-Instruct-GGUF|qwen2.5-7b-instruct-q4_k_m.gguf" ;;
+        vl)    echo "mobiuslabsgmbh/MiniCPM-V-2_6-gguf|MiniCPM-V-2_6-Q4_K_M.gguf|mmproj-model-f16.gguf" ;;
+        *)     echo "" ;;
+    esac
+}
+
 # 打印函数
 print_header() {
     echo -e "${PURPLE}"
     echo "╔════════════════════════════════════════════════════════════╗"
     echo "║         Local Commander - 本地模型指挥官                   ║"
-    echo "║            一键安装脚本 v1.0                                ║"
+    echo "║            一键安装脚本 v2.0                                ║"
+    echo "║         支持 Apple Silicon + Intel Mac                     ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -97,17 +141,31 @@ detect_system() {
     fi
     print_info "总内存: ${TOTAL_MEM_GB}GB"
 
-    # GPU 检测
+    # GPU 检测 & 后端选择
     if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
         GPU="Apple Silicon (Metal)"
         HAS_METAL=true
+        BACKEND="mlx"
+        print_info "GPU: $GPU"
+        print_success "将使用 MLX 后端"
+    elif [[ "$OS" == "Darwin" && "$ARCH" == "x86_64" ]]; then
+        GPU="Intel Mac (CPU)"
+        HAS_METAL=false
+        BACKEND="llamacpp"
+        print_info "GPU: $GPU"
+        print_warning "将使用 llama.cpp 后端 (CPU 推理)"
     elif command -v nvidia-smi &> /dev/null; then
         GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
         HAS_NVIDIA=true
+        BACKEND="llamacpp"
+        print_info "GPU: $GPU"
+        print_success "将使用 llama.cpp 后端 (CUDA 加速)"
     else
         GPU="无专用 GPU"
+        BACKEND="llamacpp"
+        print_info "GPU: $GPU"
+        print_warning "将使用 llama.cpp 后端 (CPU 推理)"
     fi
-    print_info "GPU: $GPU"
 
     # Python 检测
     if command -v python3 &> /dev/null; then
@@ -120,64 +178,68 @@ detect_system() {
     fi
 
     echo ""
+    print_info "后端: $BACKEND"
 }
 
 # 推荐模型配置
 recommend_config() {
     print_section "推荐模型配置"
 
-    # 检查是否为 Apple Silicon
-    if [[ "$OS" != "Darwin" || "$ARCH" != "arm64" ]]; then
-        CONFIG="cloud"
-        RECOMMENDED_MODELS=""
-        print_warning "非 Apple Silicon Mac，本地模型不可用"
-        print_info ""
-        print_info "系统要求："
-        print_info "  - macOS Apple Silicon (M1/M2/M3/M4)"
-        print_info "  - 推荐 16GB+ 内存"
-        print_info ""
-        print_info "可选方案："
-        print_info "  1. 使用云端模型 API (需要 API Key)"
-        print_info "  2. 在 Apple Silicon Mac 上运行"
-        print_info "  3. 使用 NVIDIA GPU 的 Linux 机器"
-        echo ""
-        echo -e "${CYAN}配置详情:${NC}"
-        echo "┌─────────────────────────────────────────────┐"
-        echo "│ 配置级别: cloud (云端模型)                   "
-        echo "│ 本地模型: 不可用                             "
-        echo "│ 需要配置 API Key                             "
-        echo "└─────────────────────────────────────────────┘"
-        return
-    fi
+    if [[ "$BACKEND" == "mlx" ]]; then
+        # MLX 配置 (Apple Silicon)
+        if [[ $TOTAL_MEM_GB -lt 16 ]]; then
+            CONFIG="minimal"
+            RECOMMENDED_MODELS="4b coder"
+            print_warning "内存较少 (${TOTAL_MEM_GB}GB)，推荐 minimal 配置"
+        elif [[ $TOTAL_MEM_GB -lt 24 ]]; then
+            CONFIG="balanced"
+            RECOMMENDED_MODELS="4b coder vl"
+            print_info "内存适中 (${TOTAL_MEM_GB}GB)，推荐 balanced 配置"
+        elif [[ $TOTAL_MEM_GB -lt 32 ]]; then
+            CONFIG="standard"
+            RECOMMENDED_MODELS="4b coder vl 35b"
+            print_info "内存充足 (${TOTAL_MEM_GB}GB)，推荐 standard 配置"
+        else
+            CONFIG="full"
+            RECOMMENDED_MODELS="4b coder vl 35b"
+            print_success "内存充裕 (${TOTAL_MEM_GB}GB)，推荐 full 配置"
+        fi
 
-    if [[ $TOTAL_MEM_GB -lt 16 ]]; then
-        CONFIG="minimal"
-        RECOMMENDED_MODELS="4b coder"
-        print_warning "内存较少 (${TOTAL_MEM_GB}GB)，推荐 minimal 配置"
-    elif [[ $TOTAL_MEM_GB -lt 24 ]]; then
-        CONFIG="balanced"
-        RECOMMENDED_MODELS="4b coder vl"
-        print_info "内存适中 (${TOTAL_MEM_GB}GB)，推荐 balanced 配置"
-    elif [[ $TOTAL_MEM_GB -lt 32 ]]; then
-        CONFIG="standard"
-        RECOMMENDED_MODELS="4b coder vl 35b"
-        print_info "内存充足 (${TOTAL_MEM_GB}GB)，推荐 standard 配置"
+        # 计算预计占用
+        TOTAL_SIZE=0
+        for model in $RECOMMENDED_MODELS; do
+            size=$(get_model_size "$model")
+            TOTAL_SIZE=$(echo "$TOTAL_SIZE + $size" | bc)
+        done
+
     else
-        CONFIG="full"
-        RECOMMENDED_MODELS="4b coder vl 35b"
-        print_success "内存充裕 (${TOTAL_MEM_GB}GB)，推荐 full 配置"
-    fi
+        # llama.cpp 配置 (Intel Mac / Linux)
+        if [[ $TOTAL_MEM_GB -lt 16 ]]; then
+            CONFIG="minimal"
+            RECOMMENDED_MODELS="fast"
+            print_warning "内存较少 (${TOTAL_MEM_GB}GB)，推荐 minimal 配置"
+        elif [[ $TOTAL_MEM_GB -lt 24 ]]; then
+            CONFIG="balanced"
+            RECOMMENDED_MODELS="fast coder"
+            print_info "内存适中 (${TOTAL_MEM_GB}GB)，推荐 balanced 配置"
+        else
+            CONFIG="standard"
+            RECOMMENDED_MODELS="fast coder vl"
+            print_info "内存充足 (${TOTAL_MEM_GB}GB)，推荐 standard 配置"
+        fi
 
-    # 计算预计占用
-    TOTAL_SIZE=0
-    for model in $RECOMMENDED_MODELS; do
-        size=$(get_model_size "$model")
-        TOTAL_SIZE=$(echo "$TOTAL_SIZE + $size" | bc)
-    done
+        # 计算预计占用 (GGUF 模型)
+        TOTAL_SIZE=0
+        for model in $RECOMMENDED_MODELS; do
+            size=$(get_gguf_model_size "$model")
+            TOTAL_SIZE=$(echo "$TOTAL_SIZE + $size" | bc)
+        done
+    fi
 
     echo ""
     echo -e "${CYAN}配置详情:${NC}"
     echo "┌─────────────────────────────────────────────┐"
+    echo "│ 后端:     $BACKEND                              "
     echo "│ 配置级别: $CONFIG                              "
     echo "│ 推荐模型: $RECOMMENDED_MODELS                 "
     printf "│ 预计占用: %.1fGB                            \n" "$TOTAL_SIZE"
@@ -199,72 +261,79 @@ install_dependencies() {
         exit 1
     fi
 
-    # 检查是否为 Apple Silicon
-    if [[ "$OS" != "Darwin" || "$ARCH" != "arm64" ]]; then
-        print_warning "非 Apple Silicon Mac，本地模型功能不可用"
-        print_info "Local Commander 将仅支持云端模型调用"
-        print_info ""
-        print_info "可选方案："
-        print_info "  1. 使用云端模型（需要 API Key）"
-        print_info "  2. 使用 NVIDIA GPU 的 Linux 机器"
-        print_info "  3. 在 Apple Silicon Mac 上运行"
-        print_info ""
+    if [[ "$BACKEND" == "mlx" ]]; then
+        # Apple Silicon - 安装 MLX
+        print_info "安装 MLX 相关包..."
 
-        # 非交互模式自动继续
-        if is_interactive; then
-            read -p "是否继续安装（仅 MCP 配置）? [y/N]: " continue_install
-            if [[ "$continue_install" != "y" && "$continue_install" != "Y" ]]; then
-                echo "取消安装"
-                exit 0
+        python3 -m pip install --user --break-system-packages \
+            mlx mlx-lm mlx-vlm \
+            sentence-transformers \
+            chromadb \
+            numpy \
+            pillow \
+            openai 2>&1 | tail -5 | while read -r line; do
+            print_info "  $line"
+        done || true
+
+        HAS_MLX=true
+        print_success "MLX 依赖安装完成"
+
+    else
+        # Intel Mac / Linux - 安装 llama.cpp
+        print_info "安装 llama.cpp..."
+
+        # macOS 使用 Homebrew
+        if [[ "$OS" == "Darwin" ]]; then
+            if command -v brew &> /dev/null; then
+                brew install llama.cpp 2>&1 | tail -3 | while read -r line; do
+                    print_info "  $line"
+                done || true
+                HAS_LLAMACPP=true
+            else
+                print_warning "未安装 Homebrew，请手动安装 llama.cpp"
+                print_info "  brew install llama.cpp"
+                print_info "  或从源码编译: https://github.com/ggml-org/llama.cpp"
             fi
-        else
-            print_info "自动继续安装..."
         fi
 
-        # 只安装基础依赖（不含 MLX 和 sentence-transformers）
-        print_info "安装基础依赖..."
+        # Linux 使用 apt 或从源码编译
+        if [[ "$OS" == "Linux" ]]; then
+            if command -v apt &> /dev/null; then
+                print_info "请手动安装 llama.cpp:"
+                print_info "  git clone https://github.com/ggml-org/llama.cpp"
+                print_info "  cd llama.cpp && make"
+            fi
+        fi
+
+        # 安装基础 Python 依赖
+        print_info "安装基础 Python 依赖..."
         python3 -m pip install --user --break-system-packages \
+            huggingface_hub \
+            sentence-transformers \
+            chromadb \
+            numpy \
+            pillow \
             openai 2>&1 | tail -3 | while read -r line; do
             print_info "  $line"
         done || true
 
-        HAS_MLX=false
-        print_success "基础依赖安装完成"
-        return
+        print_success "llama.cpp 依赖安装完成"
     fi
-
-    print_info "安装 MLX 相关包..."
-
-    # Apple Silicon Mac
-    python3 -m pip install --user --break-system-packages \
-        mlx mlx-lm mlx-vlm \
-        sentence-transformers \
-        chromadb \
-        numpy \
-        pillow \
-        openai 2>&1 | tail -5 | while read -r line; do
-            print_info "  $line"
-        done || true
-
-    HAS_MLX=true
-    print_success "Python 依赖安装完成"
 }
 
 # 下载模型
 download_models() {
     print_section "下载模型"
 
-    # 检查是否为 Apple Silicon
-    if [[ "$OS" != "Darwin" || "$ARCH" != "arm64" ]]; then
-        print_warning "非 Apple Silicon Mac，跳过本地模型下载"
-        print_info "Local Commander 将使用云端模型"
-        print_info ""
-        print_info "配置云端模型 API Key："
-        print_info "  编辑 ~/.claude/skills/local-commander/config/models.json"
-        print_info "  设置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY"
-        return
+    if [[ "$BACKEND" == "mlx" ]]; then
+        download_mlx_models
+    else
+        download_gguf_models
     fi
+}
 
+# 下载 MLX 模型
+download_mlx_models() {
     local total_models=$(echo "$RECOMMENDED_MODELS" | wc -w | tr -d ' ')
     local current=0
 
@@ -292,7 +361,6 @@ download_models() {
         # 使用 Python 下载
         print_info "正在下载 $model_id..."
         if python3 -c "from mlx_vlm import load; load('$model_id')" 2>&1 | while read -r line; do
-            # 只显示关键信息
             if [[ "$line" == *"Downloading"* ]] || [[ "$line" == *"Loading"* ]]; then
                 print_info "  $line"
             fi
@@ -300,6 +368,71 @@ download_models() {
             print_success "$model 下载完成"
         else
             print_warning "$model 下载可能需要更长时间，请稍后重试"
+        fi
+    done
+}
+
+# 下载 GGUF 模型 (Intel Mac)
+download_gguf_models() {
+    local total_models=$(echo "$RECOMMENDED_MODELS" | wc -w | tr -d ' ')
+    local current=0
+
+    for model in $RECOMMENDED_MODELS; do
+        current=$((current + 1))
+        local model_info=$(get_gguf_model_info "$model")
+        local size=$(get_gguf_model_size "$model")
+
+        if [[ -z "$model_info" ]]; then
+            print_warning "未知模型: $model"
+            continue
+        fi
+
+        echo ""
+        echo -e "${CYAN}[$current/$total_models] 下载 $model ($size GB)${NC}"
+
+        # 解析模型信息
+        local repo=$(echo "$model_info" | cut -d'|' -f1)
+        local file=$(echo "$model_info" | cut -d'|' -f2)
+        local mmproj=$(echo "$model_info" | cut -d'|' -f3)
+
+        # 检查是否已下载
+        local cache_dir="$HF_CACHE/models--${repo//\//--}"
+        if [[ -d "$cache_dir" ]]; then
+            # 检查文件是否存在
+            local found=false
+            for snapshot_dir in "$cache_dir"/snapshots/*; do
+                if [[ -f "$snapshot_dir/$file" ]]; then
+                    found=true
+                    break
+                fi
+            done
+            if $found; then
+                print_info "模型已存在，跳过下载"
+                continue
+            fi
+        fi
+
+        # 使用 huggingface-cli 下载
+        if command -v huggingface-cli &> /dev/null; then
+            print_info "正在下载 $repo/$file..."
+
+            huggingface-cli download "$repo" "$file" 2>&1 | while read -r line; do
+                print_info "  $line"
+            done || print_warning "下载 $file 失败"
+
+            # 下载 mmproj (视觉模型)
+            if [[ -n "$mmproj" ]]; then
+                print_info "正在下载 mmproj 文件..."
+                huggingface-cli download "$repo" "$mmproj" 2>&1 | while read -r line; do
+                    print_info "  $line"
+                done || print_warning "下载 $mmproj 失败"
+            fi
+
+            print_success "$model 下载完成"
+        else
+            print_warning "未安装 huggingface-cli，请手动下载:"
+            print_info "  pip install huggingface_hub"
+            print_info "  huggingface-cli download $repo $file"
         fi
     done
 }
@@ -353,7 +486,81 @@ install_skill() {
     chmod +x "$SKILL_DIR/local-commander.py" 2>/dev/null || true
     chmod +x "$SKILL_DIR/setup.sh" 2>/dev/null || true
 
+    # 创建后端配置
+    create_backend_config
+
     print_success "Skill 文件安装完成"
+}
+
+# 创建后端配置
+create_backend_config() {
+    local config_dir="$SKILL_DIR/config"
+    mkdir -p "$config_dir"
+
+    local config_file="$config_dir/models.json"
+
+    if [[ "$BACKEND" == "mlx" ]]; then
+        # MLX 配置
+        cat > "$config_file" << 'EOF'
+{
+  "backend": "mlx",
+  "models": {
+    "coder": {
+      "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
+      "alias": "coder",
+      "memory_gb": 8,
+      "use_cases": ["代码生成", "代码审查", "Bug诊断", "重构"],
+      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"]
+    },
+    "vl": {
+      "id": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
+      "alias": "vl",
+      "memory_gb": 5,
+      "use_cases": ["图像分析", "UI验证", "OCR", "截图分析"],
+      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"]
+    }
+  },
+  "default_model": "coder"
+}
+EOF
+    else
+        # llama.cpp 配置
+        cat > "$config_file" << 'EOF'
+{
+  "backend": "llamacpp",
+  "models": {
+    "coder": {
+      "hf_repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
+      "alias": "coder",
+      "memory_gb": 9,
+      "use_cases": ["代码生成", "代码审查", "Bug诊断"],
+      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"]
+    },
+    "fast": {
+      "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-7b-instruct-q4_k_m.gguf",
+      "alias": "fast",
+      "memory_gb": 5,
+      "use_cases": ["快速对话", "简单代码"],
+      "keywords": ["你好", "hello", "hi", "快速", "简单"]
+    },
+    "vl": {
+      "hf_repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
+      "gguf_file": "MiniCPM-V-2_6-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-model-f16.gguf",
+      "alias": "vl",
+      "memory_gb": 5,
+      "use_cases": ["图像分析", "UI验证", "OCR"],
+      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图"]
+    }
+  },
+  "default_model": "coder"
+}
+EOF
+    fi
+
+    print_info "创建后端配置: $BACKEND"
 }
 
 # 配置 MCP
@@ -368,7 +575,8 @@ configure_mcp() {
       "command": "python3",
       "args": ["$SKILL_DIR/lib/mcp_router.py"],
       "env": {
-        "LOCAL_COMMANDER_PATH": "$SKILL_DIR"
+        "LOCAL_COMMANDER_PATH": "$SKILL_DIR",
+        "LOCAL_COMMANDER_BACKEND": "$BACKEND"
       }
     }
   }
@@ -394,18 +602,34 @@ EOF
 verify_installation() {
     print_section "验证安装"
 
+    print_info "检查后端状态..."
+
+    if [[ "$BACKEND" == "mlx" ]]; then
+        if python3 -c "import mlx" 2>/dev/null; then
+            print_success "MLX 后端可用"
+        else
+            print_warning "MLX 后端不可用"
+        fi
+    else
+        if command -v llama-cli &> /dev/null; then
+            print_success "llama.cpp 后端可用"
+            llama-cli --version 2>&1 | head -1 | while read -r line; do
+                print_info "  版本: $line"
+            done || true
+        elif [[ -f "$HOME/llama.cpp/main" ]]; then
+            print_success "llama.cpp 后端可用 (本地编译)"
+        else
+            print_warning "llama.cpp 未安装"
+            print_info "请安装: brew install llama.cpp"
+        fi
+    fi
+
     print_info "检查模型配置..."
     if python3 "$SKILL_DIR/local-commander.py" --validate 2>/dev/null; then
         print_success "模型配置有效"
     else
         print_warning "模型配置验证失败，请检查 config/models.json"
     fi
-
-    print_info "列出可用模型..."
-    python3 "$SKILL_DIR/local-commander.py" --models 2>/dev/null || true
-
-    print_info "检查知识库..."
-    python3 "$SKILL_DIR/local-commander.py" --kb-stats 2>/dev/null || true
 }
 
 # 打印完成信息
@@ -417,6 +641,10 @@ print_completion() {
     echo "╚════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
+    echo -e "${CYAN}系统配置:${NC}"
+    echo "  后端: ${GREEN}$BACKEND${NC}"
+    echo "  架构: $ARCH"
+    echo ""
     echo -e "${CYAN}下一步:${NC}"
     echo ""
     echo "1. 重启 Claude Code 使 MCP 配置生效"
@@ -426,12 +654,18 @@ print_completion() {
     echo ""
     echo "3. 使用方式:"
     echo "   ${BLUE}/local 写一个 Python 函数${NC}"
-    echo "   ${BLUE}/local --image ~/test.png 分析这个图片${NC}"
+
+    if [[ "$BACKEND" == "llamacpp" ]]; then
+        echo ""
+        echo -e "${YELLOW}Intel Mac 注意事项:${NC}"
+        echo "  • CPU 推理速度较慢，建议使用小模型 (7B)"
+        echo "  • 确保有足够内存 (推荐 16GB+)"
+        echo "  • 视觉模型使用 MiniCPM-V 或 LLaVA"
+    fi
+
     echo ""
     echo -e "${YELLOW}自定义模型配置:${NC}"
     echo "   编辑 ${BLUE}~/.claude/skills/local-commander/config/models.json${NC}"
-    echo "   设置 35b 和 4b 的本地模型路径"
-    echo ""
 }
 
 # 检测是否在交互模式
@@ -453,10 +687,18 @@ interactive_select() {
 
     echo ""
     echo -e "${CYAN}请选择安装配置:${NC}"
-    echo "  1) minimal   - 4b + coder (~12GB)    [内存 < 16GB]"
-    echo "  2) balanced  - 4b + coder + vl (~16GB) [内存 16-24GB]"
-    echo "  3) standard  - 全部模型 (~34GB)       [内存 24-32GB]"
-    echo "  4) full      - 全部模型 (~42GB)       [内存 > 32GB]"
+
+    if [[ "$BACKEND" == "mlx" ]]; then
+        echo "  1) minimal   - 4b + coder (~12GB)    [内存 < 16GB]"
+        echo "  2) balanced  - 4b + coder + vl (~16GB) [内存 16-24GB]"
+        echo "  3) standard  - 全部模型 (~34GB)       [内存 24-32GB]"
+        echo "  4) full      - 全部模型 (~42GB)       [内存 > 32GB]"
+    else
+        echo "  1) minimal   - fast (~5GB)           [内存 < 16GB]"
+        echo "  2) balanced  - fast + coder (~14GB)   [内存 16-24GB]"
+        echo "  3) standard  - fast + coder + vl (~19GB) [内存 > 24GB]"
+    fi
+
     echo "  5) custom    - 自定义选择"
     echo "  6) 退出"
     echo ""
@@ -464,30 +706,58 @@ interactive_select() {
 
     case $choice in
         1)
-            CONFIG="minimal"
-            RECOMMENDED_MODELS="4b coder"
+            if [[ "$BACKEND" == "mlx" ]]; then
+                CONFIG="minimal"
+                RECOMMENDED_MODELS="4b coder"
+            else
+                CONFIG="minimal"
+                RECOMMENDED_MODELS="fast"
+            fi
             ;;
         2)
-            CONFIG="balanced"
-            RECOMMENDED_MODELS="4b coder vl"
+            if [[ "$BACKEND" == "mlx" ]]; then
+                CONFIG="balanced"
+                RECOMMENDED_MODELS="4b coder vl"
+            else
+                CONFIG="balanced"
+                RECOMMENDED_MODELS="fast coder"
+            fi
             ;;
         3)
-            CONFIG="standard"
-            RECOMMENDED_MODELS="4b coder vl 35b"
+            if [[ "$BACKEND" == "mlx" ]]; then
+                CONFIG="standard"
+                RECOMMENDED_MODELS="4b coder vl 35b"
+            else
+                CONFIG="standard"
+                RECOMMENDED_MODELS="fast coder vl"
+            fi
             ;;
         4)
-            CONFIG="full"
-            RECOMMENDED_MODELS="4b coder vl 35b"
+            if [[ "$BACKEND" == "mlx" ]]; then
+                CONFIG="full"
+                RECOMMENDED_MODELS="4b coder vl 35b"
+            else
+                print_warning "Intel Mac 不支持 full 配置"
+                CONFIG="standard"
+                RECOMMENDED_MODELS="fast coder vl"
+            fi
             ;;
         5)
             echo ""
-            echo "可用模型:"
-            echo "  - coder (8GB): 代码生成"
-            echo "  - vl (5GB): 图像分析"
-            echo "  - 35b (18GB): 复杂推理"
-            echo "  - 4b (3.5GB): 快速问答"
+            if [[ "$BACKEND" == "mlx" ]]; then
+                echo "可用模型:"
+                echo "  - coder (8GB): 代码生成"
+                echo "  - vl (5GB): 图像分析"
+                echo "  - 35b (18GB): 复杂推理"
+                echo "  - 4b (3.5GB): 快速问答"
+            else
+                echo "可用模型:"
+                echo "  - coder (9GB): 代码生成"
+                echo "  - fast (5GB): 快速对话"
+                echo "  - vl (5GB): 图像分析"
+            fi
             echo ""
-            read -p "请输入要安装的模型 (空格分隔，如: coder vl 4b): " custom_models
+            read -p "请输入要安装的模型 (空格分隔): " custom_models
             RECOMMENDED_MODELS="$custom_models"
             CONFIG="custom"
             ;;
