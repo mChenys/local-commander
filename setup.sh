@@ -20,20 +20,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$HOME/.claude/skills/local-commander"
 HF_CACHE="$HOME/.cache/huggingface/hub"
 
-# 模型配置
+# 模型配置 (键名不能以数字开头，使用 model_ 前缀)
 declare -A MODEL_SIZES=(
-    ["coder"]=8
-    ["vl"]=5
-    ["35b"]=18
-    ["4b"]=3.5
+    ["model_coder"]=8
+    ["model_vl"]=5
+    ["model_35b"]=18
+    ["model_4b"]=3.5
 )
 
 declare -A MODEL_IDS=(
-    ["coder"]="mlx-community/Qwen2.5-Coder-14B-Instruct-4bit"
-    ["vl"]="mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
-    ["35b"]="custom"
-    ["4b"]="custom"
+    ["model_coder"]="mlx-community/Qwen2.5-Coder-14B-Instruct-4bit"
+    ["model_vl"]="mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
+    ["model_35b"]="custom"
+    ["model_4b"]="custom"
 )
+
+# 获取模型大小
+get_model_size() {
+    local model="$1"
+    echo "${MODEL_SIZES[model_$model]}"
+}
+
+# 获取模型 ID
+get_model_id() {
+    local model="$1"
+    echo "${MODEL_IDS[model_$model]}"
+}
 
 # 打印函数
 print_header() {
@@ -137,7 +149,7 @@ recommend_config() {
     # 计算预计占用
     TOTAL_SIZE=0
     for model in "${RECOMMENDED_MODELS[@]}"; do
-        size=${MODEL_SIZES[$model]}
+        size=$(get_model_size "$model")
         TOTAL_SIZE=$(echo "$TOTAL_SIZE + $size" | bc)
     done
 
@@ -211,8 +223,8 @@ download_models() {
 
     for model in "${RECOMMENDED_MODELS[@]}"; do
         current=$((current + 1))
-        local model_id="${MODEL_IDS[$model]}"
-        local size="${MODEL_SIZES[$model]}"
+        local model_id=$(get_model_id "$model")
+        local size=$(get_model_size "$model")
 
         echo ""
         echo -e "${CYAN}[$current/$total_models] 下载 $model ($size GB)${NC}"
