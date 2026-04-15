@@ -2,145 +2,551 @@
 
 > 让你拥有一个本地 AI 团队，实现 90%+ Token 节省
 
-## 功能概览
+---
 
-| 功能 | 模型 | 说明 |
-|------|------|------|
-| 🤖 代码生成 | Qwen2.5-Coder-14B | 生成、审查、Debug |
-| 👁️ 图像分析 | Qwen2.5-VL-7B | UI验证、OCR、截图分析 |
-| 🧠 复杂推理 | Qwen3.5-35B MoE Claude Distilled | 架构设计、方案评估、深度分析 |
-| ⚡ 快速问答 | Qwen3-4B GPT-5.1 Distilled | 轻量对话、简单代码 |
-| 📚 AI 知识库 | BGE-M3 + ChromaDB | 持久化知识存储 |
-| 🧪 Web 自动化测试 | Playwright + VL | UI 自动化验收测试 |
-| 📱 Android 自动化 | ADB + VL | 无需 Appium 的 UI 测试 |
-| 🎯 VL 视觉定位 | dump_ui → remote_vl → local_vl | 多级降级策略，精准定位 UI 元素 |
-| 🔄 代码审查流 | Coder + 35B | 生成 → 审查 → 修复 |
+## 目录
+
+- [功能概览](#功能概览)
+- [快速开始](#快速开始)
+  - [一键安装](#一键安装)
+  - [验证安装](#验证安装)
+  - [基本使用](#基本使用)
+- [核心功能](#核心功能)
+  - [本地模型调用](#本地模型调用)
+  - [代码审查工作流](#代码审查工作流)
+  - [AI 知识库](#ai-知识库)
+- [UI 自动化测试](#ui-自动化测试)
+  - [Web 自动化](#web-自动化)
+  - [Android 自动化](#android-自动化)
+  - [VL 视觉定位](#vl-视觉定位)
+- [高级配置](#高级配置)
+  - [模型配置](#模型配置)
+  - [VL 服务配置](#vl-服务配置)
+- [参考信息](#参考信息)
+  - [项目结构](#项目结构)
+  - [MCP API 文档](#mcp-api-文档)
+  - [常见问题](#常见问题)
 
 ---
 
-## 🚀 如何接入
+## 功能概览
 
-### 一键安装脚本
+### 核心能力
 
-运行以下命令，自动检测系统配置并安装最佳模型组合：
+| 能力 | 说明 | 优势 |
+|------|------|------|
+| 🤖 **本地模型** | 多模型智能路由 | 90%+ Token 节省 |
+| 👁️ **图像分析** | VL 视觉理解 | UI 验证、OCR |
+| 🧠 **复杂推理** | 35B MoE 模型 | 架构设计、深度分析 |
+| 🔄 **代码审查** | 生成→审查→修复 | 自动化质量保证 |
+
+### 模型矩阵
+
+| 模型 | 别名 | 大小 | 专长 |
+|------|------|------|------|
+| Qwen2.5-Coder-14B | `coder` | 8GB | 代码生成、审查、Debug |
+| Qwen2.5-VL-7B | `vl` | 5GB | 图像分析、UI验证、OCR |
+| Qwen3.5-35B MoE | `35b` | 18GB | 复杂推理、架构设计 |
+| Qwen3-4B | `4b` | 3.5GB | 快速问答、简单代码 |
+
+### 自动化测试
+
+| 平台 | 方案 | 特点 |
+|------|------|------|
+| Web | Playwright + VL | 截图分析、交互验证 |
+| Android | ADB + VL | 零依赖、无需 Appium |
+| iOS | XCTest + VL | 模拟器/真机支持 |
+
+---
+
+## 快速开始
+
+### 一键安装
 
 ```bash
-# 下载并运行安装脚本
+# 方式一：在线安装
 curl -fsSL https://raw.githubusercontent.com/mChenys/local-commander/main/setup.sh | bash
 
-# 或者克隆仓库后运行
+# 方式二：克隆安装
 git clone https://github.com/mChenys/local-commander.git
-cd local-commander
-./setup.sh
+cd local-commander && ./setup.sh
 ```
 
-### 安装脚本功能
+安装脚本会自动：
+1. 检测系统配置（OS、内存、GPU）
+2. 推荐最佳模型组合
+3. 安装 Python 依赖
+4. 下载推荐模型
+5. 配置 MCP 服务
 
-脚本会自动完成以下操作：
+**配置级别**：
 
-1. **系统检测**
-   - 检测操作系统 (macOS/Linux)
-   - 检测 CPU 架构 (Apple Silicon/Intel/AMD)
-   - 检测可用内存
-   - 检测 GPU (NVIDIA/Apple Metal)
+| 级别 | 模型组合 | 内存占用 | 适用场景 |
+|------|---------|---------|---------|
+| `minimal` | 4b + coder | ~12GB | 内存有限 |
+| `balanced` | 4b + coder + vl | ~16GB | 日常开发 |
+| `standard` | 全部模型 | ~34GB | 全功能使用 |
+| `full` | 全部模型 | ~42GB | 内存充裕 |
 
-2. **智能推荐模型组合**
-
-   | 内存 | 推荐配置 | 模型组合 | 预计占用 |
-   |------|---------|---------|---------|
-   | < 16GB | `minimal` | 4b + coder | ~12GB |
-   | 16-24GB | `balanced` | 4b + coder + vl | ~16GB |
-   | 24-32GB | `standard` | 4b + coder + vl + 35b | ~34GB |
-   | > 32GB | `full` | 全部模型 | ~42GB |
-
-3. **自动安装**
-   - 安装 Python 依赖 (mlx, mlx-lm, mlx-vlm 等)
-   - 下载推荐的模型
-   - 配置 MCP 服务
-   - 验证安装结果
-
-### 手动安装
-
-如果你想手动安装，请参考下方的详细步骤。
-
-### 模型推荐指南
-
-根据你的使用场景选择模型：
-
-| 使用场景 | 推荐模型 | 内存需求 |
-|---------|---------|---------|
-| 日常代码编写 | `coder` (14B) | 8GB |
-| 快速问答/简单代码 | `4b` | 3.5GB |
-| 图像分析/UI验证 | `vl` (7B) | 5GB |
-| 架构设计/复杂推理 | `35b` | 18GB |
-| 全功能使用 | 全部 | 34GB+ |
-
-### 安装验证
+### 验证安装
 
 ```bash
 # 验证模型配置
 python3 ~/.claude/skills/local-commander/local-commander.py --validate
 
-# 列出已安装模型
+# 列出可用模型
 python3 ~/.claude/skills/local-commander/local-commander.py --models
 
 # 测试知识库
 python3 ~/.claude/skills/local-commander/local-commander.py --kb-stats
 ```
 
+### 基本使用
+
+**CLI 模式**：
+
+```bash
+# 激活
+/local
+
+# 代码生成
+/local 写一个 Kotlin 扩展函数
+
+# 复杂推理
+/local --model 35b 设计支付系统架构
+
+# 图像分析
+/local --image ~/screenshot.png 分析这个 UI
+
+# 知识库操作
+/local --kb-add "Swift 中 @escaping 标记异步闭包"
+/local --kb-search "闭包 异步"
+```
+
+**MCP 模式**：
+
+```python
+# 执行任务
+mcp__local-commander-router__execute_local({
+    "task": "写一个 TypeScript 函数",
+    "model": "coder"  # 可选，自动路由
+})
+
+# 代码审查工作流
+mcp__local-commander-router__generate_with_review({
+    "task": "实现用户登录验证",
+    "language": "TypeScript"
+})
+
+# 知识库
+mcp__local-commander-router__kb_add({
+    "text": "知识点内容",
+    "category": "coding",
+    "tags": ["python", "async"]
+})
+```
+
 ---
 
-## ⚠️ VL 视觉定位服务配置说明
+## 核心功能
 
-**重要**：VL 视觉定位功能采用**多级降级策略**，优先使用 ADB Dump UI（精确可靠），其次使用远程 vLLM 服务（速度快），最后使用本地 MLX 模型（离线可用）。
+### 本地模型调用
 
-### 降级策略
+#### 智能路由
 
-```
-dump_ui (ADB精确) → remote_vl (局域网VL) → local_vl (本地MLX)
-```
-
-| 方法 | 优先级 | 说明 |
-|------|--------|------|
-| `dump_ui` | 1 | ADB UI Dump，文本元素定位精确可靠 |
-| `remote_vl` | 2 | 局域网 vLLM 服务，速度快，坐标定位准确 |
-| `local_vl` | 3 | 本地 MLX 模型，无需网络，适合离线场景 |
-
-### 用途区分
-
-| 场景 | 推荐方法 | 原因 |
-|------|----------|------|
-| **坐标定位** | dump_ui → remote_vl | 精度高、速度快 |
-| **看截图内容** | remote_vl 或 local_vl | remote_vl 更快，local_vl 省token |
-
-### 配置文件位置
+系统根据任务特征自动选择最佳模型：
 
 ```
-~/.claude/skills/local-commander/config/vl_service.json
+┌─────────────────────────────────────────────┐
+│              任务输入                        │
+└──────────────────┬──────────────────────────┘
+                   ▼
+┌─────────────────────────────────────────────┐
+│           TaskClassifier                    │
+│  ├─ 包含"代码/函数/实现" → coder            │
+│  ├─ 包含"图片/截图/UI"   → vl               │
+│  ├─ 包含"架构/设计/分析" → 35b              │
+│  └─ 简单问答/问候       → 4b                │
+└──────────────────┬──────────────────────────┘
+                   ▼
+┌─────────────────────────────────────────────┐
+│           模型执行                          │
+└─────────────────────────────────────────────┘
 ```
 
-### 配置示例
+#### MCP 调用
+
+```python
+# 基本调用
+mcp__local-commander-router__execute_local({
+    "task": "任务描述",
+    "model": "coder",        # 可选，自动路由
+    "max_tokens": 4096,      # 可选
+    "smart": true            # 智能模式（自动代码生成）
+})
+
+# 返回结果
+{
+    "success": true,
+    "result": "生成的代码或回答",
+    "model": "coder",
+    "tokens_used": 1234
+}
+```
+
+### 代码审查工作流
+
+完整的 **生成 → 审查 → 修复** 闭环：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  generate_with_review                    │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│   ┌─────────┐     ┌─────────┐     ┌─────────┐          │
+│   │ coder   │────▶│   35b   │────▶│  coder  │──┐       │
+│   │ 生成代码 │     │ 审查代码 │     │ 修复问题 │  │       │
+│   └─────────┘     └─────────┘     └─────────┘  │       │
+│        │               │               ▲       │       │
+│        │               ▼               │       │       │
+│        │         ┌───────────┐         │       │       │
+│        │         │ 有问题？  │─────────┘       │       │
+│        │         └───────────┘                 │       │
+│        │               │                       │       │
+│        │               ▼ 无问题                │       │
+│        │         ┌───────────┐                 │       │
+│        └────────▶│ 返回结果  │◀────────────────┘       │
+│                  └───────────┘   (最多迭代 2 次)        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**模型分工**：
+
+| 模型 | 职责 | 原因 |
+|------|------|------|
+| `coder` | 生成、修复 | 专注代码领域 |
+| `35b` | 审查、分析 | MoE + Claude 蒸馏，推理强 |
+
+**MCP 调用**：
+
+```python
+# 完整工作流
+result = mcp__local-commander-router__generate_with_review({
+    "task": "实现用户登录验证",
+    "language": "TypeScript",
+    "max_fix_iterations": 2
+})
+
+# 返回结果
+{
+    "success": true,
+    "final_code": "...修复后的代码...",
+    "review_reports": [...],
+    "iterations": [...]
+}
+
+# 单独审查
+mcp__local-commander-router__review_code({
+    "code": "...",
+    "language": "TypeScript",
+    "focus": "all"  # quality / security / performance / all
+})
+
+# 单独修复
+mcp__local-commander-router__fix_code({
+    "code": "...",
+    "issues": "问题描述",
+    "language": "TypeScript"
+})
+```
+
+### AI 知识库
+
+基于 BGE-M3 + ChromaDB 的向量知识存储：
+
+```python
+# 添加知识点
+mcp__local-commander-router__kb_add({
+    "text": "知识点内容",
+    "category": "coding",      # coding / architecture / debugging / tools / general
+    "tags": ["python", "async"],
+    "importance": 0.5          # 0-1
+})
+
+# 搜索知识
+mcp__local-commander-router__kb_search({
+    "query": "异步编程",
+    "top_k": 5,
+    "category": "coding"       # 可选过滤
+})
+
+# 列出知识
+mcp__local-commander-router__kb_list({
+    "category": "coding",
+    "tags": ["python"],
+    "limit": 20
+})
+
+# 删除知识
+mcp__local-commander-router__kb_delete({
+    "id": "知识点ID"
+})
+
+# 统计信息
+mcp__local-commander-router__kb_stats({})
+```
+
+---
+
+## UI 自动化测试
+
+### Web 自动化
+
+基于 Playwright + VL 的前端验收测试：
+
+```python
+# 单页面分析
+mcp__local-commander-router__ui_analyze_page({
+    "url": "http://localhost:3000/tasks",
+    "analysis_prompt": "分析页面功能和问题"
+})
+
+# 批量测试
+mcp__local-commander-router__ui_test_pages({
+    "base_url": "http://localhost:3000",
+    "pages": ["/", "/tasks", "/settings"],
+    "page_names": ["首页", "任务管理", "设置"]
+})
+
+# SPA 路由测试
+mcp__local-commander-router__ui_test_spa({
+    "url": "http://localhost:1420",
+    "routes": [
+        {"name": "任务", "menu_text": "任务", "expected_elements": ["新建任务"]},
+        {"name": "日志", "menu_text": "日志", "expected_elements": ["导出"]}
+    ]
+})
+
+# 交互测试
+mcp__local-commander-router__ui_interact({
+    "url": "http://localhost:3000",
+    "steps": [
+        {"action": "fill", "selector": "#username", "value": "admin"},
+        {"action": "click", "selector": "button[type=submit]"},
+        {"action": "assert_text", "selector": ".welcome", "value": "欢迎"}
+    ]
+})
+
+# 截图
+mcp__local-commander-router__ui_screenshot({
+    "url": "http://localhost:3000",
+    "output_path": "/tmp/screenshot.png"
+})
+```
+
+### Android 自动化
+
+**零依赖方案**：无需 Appium，直接使用 ADB。
+
+#### 技术架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  AndroidUIAutomation                     │
+├─────────────────────────────────────────────────────────┤
+│  基础操作                                                │
+│  tap(x, y) | swipe() | input_text() | press_key()       │
+├─────────────────────────────────────────────────────────┤
+│  元素定位                                                │
+│  dump_ui() | find_element() | smart_find()              │
+├─────────────────────────────────────────────────────────┤
+│  高级操作                                                │
+│  tap_element() | scroll_and_find() | run_test_sequence()│
+└─────────────────────────────────────────────────────────┘
+```
+
+#### MCP 调用
+
+```python
+# 获取 UI 元素
+mcp__local-commander-router__android_dump_ui({})
+
+# 点击元素（支持多种定位方式）
+mcp__local-commander-router__android_tap({
+    "text": "登录",                    # 通过文本
+    "resource_id": "btn_login",        # 通过 resource-id
+    "content_desc": "登录按钮"          # 通过 content-desc
+})
+
+# 截图
+mcp__local-commander-router__android_screenshot({
+    "save_path": "/tmp/screen.png"
+})
+
+# 测试序列
+mcp__local-commander-router__android_run_test({
+    "steps": [
+        {"action": "tap", "element": {"text": "设置"}},
+        {"action": "screenshot"},
+        {"action": "swipe", "x1": 540, "y1": 1500, "x2": 540, "y2": 800},
+        {"action": "tap", "element": {"text": "English"}},
+        {"action": "assert_element", "element": {"text": "Language"}},
+        {"action": "back"},
+        {"action": "wait", "seconds": 1}
+    ]
+})
+```
+
+#### 支持的操作
+
+| 操作 | 参数 | 说明 |
+|------|------|------|
+| `tap` | `element` | 点击元素 |
+| `tap_coords` | `x`, `y` | 点击坐标 |
+| `smart_tap` | `keyword` | 智能查找点击 |
+| `scroll_and_tap` | `keyword` | 滚动查找点击 |
+| `input` | `text` | 输入文本 |
+| `swipe` | `x1,y1,x2,y2` | 滑动 |
+| `back` / `home` | - | 按键 |
+| `screenshot` | `save_path` | 截图 |
+| `wait` | `seconds` | 等待 |
+| `assert_element` | `element` | 断言元素 |
+| `assert_text` | `text` | 断言文本 |
+
+### VL 视觉定位
+
+通过自然语言定位 UI 元素，采用**多级降级策略**：
+
+```
+dump_ui (ADB精确) → remote_vl (局域网) → local_vl (本地MLX)
+     优先级 1            优先级 2            优先级 3
+```
+
+| 方法 | 精度 | 速度 | 适用场景 |
+|------|------|------|----------|
+| `dump_ui` | ⭐⭐⭐⭐⭐ | ~100ms | 文本元素、标准 UI |
+| `remote_vl` | ⭐⭐⭐⭐ | ~0.6s | WebView、Canvas、图形 |
+| `local_vl` | ⭐⭐⭐ | ~30s | 离线场景 |
+
+#### MCP 调用
+
+```python
+# 检测元素
+mcp__local-commander-router__vl_detect_element({
+    "image_path": "/tmp/screenshot.png",
+    "prompt": "蓝色的登录按钮"
+})
+# 返回: {"elements": [{"label": "登录按钮", "bbox": [...], "center": [x, y]}]}
+
+# 获取点击坐标
+mcp__local-commander-router__vl_get_click_coords({
+    "image_path": "/tmp/screenshot.png",
+    "element_desc": "右上角的设置图标"
+})
+# 返回: {"x": 200, "y": 380, "confidence": 0.96}
+
+# 智能定位（优先 dump_ui）
+mcp__local-commander-router__vl_smart_locate({
+    "image_path": "/tmp/screenshot.png",
+    "element_desc": "登录",
+    "prefer_dump_ui": true
+})
+
+# 调试模式
+mcp__local-commander-router__vl_debug_detect({
+    "image_path": "/tmp/screenshot.png",
+    "prompt": "登录按钮",
+    "output_path": "/tmp/debug.png"
+})
+```
+
+#### 与自动化结合
+
+```python
+# Android + VL
+screenshot = mcp__local-commander-router__android_screenshot({})
+coords = mcp__local-commander-router__vl_get_click_coords({
+    "image_path": screenshot["screenshot_path"],
+    "element_desc": "设置按钮"
+})
+mcp__local-commander-router__android_tap({"x": coords["x"], "y": coords["y"]})
+
+# Web + VL
+mcp__local-commander-router__ui_screenshot({"url": "http://localhost:3000"})
+coords = mcp__local-commander-router__vl_get_click_coords({
+    "image_path": "/tmp/ui-screenshot.png",
+    "element_desc": "提交按钮"
+})
+```
+
+---
+
+## 高级配置
+
+### 模型配置
+
+配置文件：`~/.claude/skills/local-commander/config/models.json`
+
+```json
+{
+  "models": {
+    "coder": {
+      "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
+      "alias": "coder",
+      "memory_gb": 8,
+      "use_cases": ["代码生成", "代码审查", "Debug"],
+      "keywords": ["代码", "函数", "实现", "写", "fix"]
+    },
+    "vl": {
+      "id": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
+      "alias": "vl",
+      "memory_gb": 5,
+      "use_cases": ["图像分析", "UI验证", "OCR"],
+      "keywords": ["图片", "截图", "图像", "UI", "分析图"]
+    },
+    "reasoning": {
+      "id": "/path/to/your/35b-model",
+      "alias": "35b",
+      "memory_gb": 18,
+      "use_cases": ["复杂推理", "架构设计"],
+      "keywords": ["架构", "设计", "方案", "分析"]
+    },
+    "fast": {
+      "id": "/path/to/your/4b-model",
+      "alias": "4b",
+      "memory_gb": 3.5,
+      "use_cases": ["快速对话", "简单代码"],
+      "keywords": ["你好", "hello", "快速", "简单"]
+    }
+  },
+  "default_model": "coder",
+  "model_groups": {
+    "fast_models": ["fast", "coder"],
+    "reasoning_models": ["reasoning"],
+    "code_models": ["coder", "reasoning"]
+  }
+}
+```
+
+### VL 服务配置
+
+配置文件：`~/.claude/skills/local-commander/config/vl_service.json`
 
 ```json
 {
   "vl_grounding": {
     "enabled": true,
-    "timeout": 60,
-    "max_tokens": 2048,
-    "temperature": 0.1,
-
     "fallback_strategy": "dump_ui -> remote_vl -> local_vl",
 
     "dump_ui": {
       "enabled": true,
-      "priority": 1,
-      "_comment": "ADB UI Dump 优先，文本元素定位精确可靠"
+      "priority": 1
     },
 
     "remote_vl": {
       "enabled": true,
       "priority": 2,
-      "base_url": "http://YOUR_SERVER_IP:8000/v1",  // ⚠️ 请修改
+      "base_url": "http://YOUR_SERVER:8000/v1",
       "model": "Qwen/Qwen3-VL-8B-Instruct",
       "api_key": "EMPTY",
       "timeout": 30
@@ -156,915 +562,127 @@ dump_ui (ADB精确) → remote_vl (局域网VL) → local_vl (本地MLX)
 }
 ```
 
-### 部署 vLLM 服务（可选）
-
-如果您需要自己部署 vLLM 服务：
+**部署 vLLM 服务**（可选）：
 
 ```bash
-# 安装 vLLM
 pip install vllm
-
-# 启动服务
 python -m vllm.entrypoints.openai.api_server \
     --model Qwen/Qwen3-VL-8B-Instruct \
-    --host 0.0.0.0 \
-    --port 8000
-```
-
-### 下载本地 VL 模型（可选）
-
-首次使用 `local_vl` 时会自动下载，或手动预下载：
-
-```bash
-# 下载 bf16 全精度版 (~15GB)
-python3 -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/Qwen2.5-VL-7B-Instruct-bf16')"
+    --host 0.0.0.0 --port 8000
 ```
 
 ---
 
-## 快速开始
+## 参考信息
 
-### 1. 系统要求
-
-- **操作系统**: macOS (Apple Silicon 推荐)
-- **Python**: 3.10+
-- **内存**: 16GB+ (推荐 32GB)
-- **存储**: 50GB+ (用于模型)
-
-### 2. 安装依赖
-
-```bash
-# Python 依赖
-pip3 install --break-system-packages \
-    mlx mlx-lm mlx-vlm \
-    sentence-transformers \
-    chromadb \
-    numpy
-
-# Node.js 依赖 (用于 UI 自动化测试，可选)
-npm install -g playwright
-npx playwright install
-```
-
-### 3. 下载本地模型
-
-#### MLX 模型 (代码/推理/视觉)
-
-使用 [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) 项目提供的 **4-bit 量化模型**：
-
-```bash
-# 安装 mlx-vlm (如果还没安装)
-pip3 install --break-system-packages mlx-vlm
-
-# 首次使用时会自动下载模型到 ~/.cache/huggingface/hub/
-# 无需手动下载，执行任务时自动拉取
-```
-
-**可用模型 (自动下载):**
-
-| 别名 | 模型 ID | 大小 | 用途 |
-|------|---------|------|------|
-| `coder` | `mlx-community/Qwen2.5-Coder-14B-Instruct-4bit` | ~8GB | 代码生成 |
-| `vl` | `mlx-community/Qwen2.5-VL-7B-Instruct-4bit` | ~5GB | 图像分析 |
-| `35b` | 自定义路径 (MoE Claude Distilled) | ~18GB | 复杂推理、深度分析 |
-| `4b` | 自定义路径 (GPT-5.1 Distilled) | ~3.5GB | 快速问答、简单代码 |
-
-#### 🔄 模型自动下载机制
-
-**无需手动下载模型！** 模型会在首次使用时自动下载：
-
-```
-用户执行命令 (如 /local 写代码)
-       ↓
-local-commander.py 调用 mlx-vlm 库
-       ↓
-mlx-vlm 检查模型是否已存在于本地缓存
-       ↓
-┌─────────────────────────────────────┐
-│ 不存在 → 自动从 HuggingFace 下载     │
-│          到 ~/.cache/huggingface/    │
-│ 存在   → 直接加载，无需等待          │
-└─────────────────────────────────────┘
-```
-
-**按需下载特点：**
-
-| 特点 | 说明 |
-|------|------|
-| 🎯 **按需下载** | 只下载实际用到的模型，不用的不下载 |
-| 🤖 **自动触发** | 执行任务时代码自动下载，无需手动操作 |
-| 💾 **持久化** | 下载后保存在本地，下次启动秒加载 |
-| 📦 **增量更新** | 只下载变更部分，节省带宽 |
-
-**下载触发时机：**
-
-| 首次执行 | 自动下载模型 |
-|---------|------------|
-| `/local 你好` | `4b` (~3.5GB) |
-| `/local 写代码` | `coder` (~8GB) |
-| `/local --image xxx 分析图片` | `vl` (~5GB) |
-| `/local --model 35b 复杂问题` | `35b` (~15GB) |
-
-**模型存储位置：**
-
-```
-~/.cache/huggingface/hub/
-├── models--mlx-community--Qwen2.5-Coder-14B-Instruct-4bit/   # 代码模型
-├── models--mlx-community--Qwen2.5-VL-7B-Instruct-4bit/       # 视觉模型
-├── models--mlx-community--Qwen3.5-27B-4bit/                  # 推理模型
-├── models--mlx-community--Qwen2.5-7B-Instruct-4bit/          # 快速模型
-└── models--BAAI--bge-m3/                                      # Embedding 模型
-```
-
-**手动预下载 (可选，节省首次等待时间):**
-
-```bash
-# 使用 Python 预下载模型
-python3 -c "from mlx_vlm import load; load('mlx-community/Qwen2.5-Coder-14B-Instruct-4bit')"
-python3 -c "from mlx_vlm import load; load('mlx-community/Qwen2.5-VL-7B-Instruct-4bit')"
-python3 -c "from mlx_vlm import load; load('mlx-community/Qwen3.5-27B-4bit')"
-python3 -c "from mlx_vlm import load; load('mlx-community/Qwen2.5-7B-Instruct-4bit')"
-```
-
-#### Embedding 模型 (知识库)
-
-```bash
-# BGE-M3 会自动下载到 ~/.cache/huggingface/hub/
-# 首次使用知识库时自动下载，无需手动操作
-```
-
-### 4. 安装 Local Commander
-
-```bash
-# 复制到 Claude Code skills 目录
-cp -r local-commander ~/.claude/skills/
-
-# 添加执行权限
-chmod +x ~/.claude/skills/local-commander/local-commander.py
-```
-
-### 5. 配置 MCP 服务
-
-创建或编辑 `~/.claude/.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "local-commander-router": {
-      "command": "python3",
-      "args": ["/Users/<你的用户名>/.claude/skills/local-commander/lib/mcp_router.py"],
-      "env": {
-        "LOCAL_COMMANDER_PATH": "/Users/<你的用户名>/.claude/skills/local-commander"
-      }
-    }
-  }
-}
-```
-
-### 6. 验证安装
-
-```bash
-# 验证模型配置
-python3 ~/.claude/skills/local-commander/local-commander.py --validate
-
-# 列出可用模型
-python3 ~/.claude/skills/local-commander/local-commander.py --models
-
-# 测试知识库
-python3 ~/.claude/skills/local-commander/local-commander.py --kb-stats
-```
-
----
-
-## 使用方法
-
-### Skill 模式 (交互式)
-
-```bash
-# 激活
-/local
-
-# 执行任务
-/local 写一个 Kotlin 扩展函数
-/local --model 35b 设计支付架构
-/local --image ~/Downloads/screenshot.png 分析这个UI
-
-# 知识库操作
-/local --kb-add "在 Swift 中使用 @escaping 标记异步闭包"
-/local --kb-search "闭包 异步"
-/local --kb-list
-```
-
-### MCP 模式 (程序化调用)
-
-```python
-# 执行本地任务
-mcp__local-commander-router__execute_local({
-    "task": "写一个 TypeScript 函数",
-    "model": "coder"  # 可选，自动路由
-})
-
-# 代码审查工作流
-mcp__local-commander-router__generate_with_review({
-    "task": "实现用户登录验证",
-    "language": "TypeScript"
-})
-
-# 知识库操作
-mcp__local-commander-router__kb_add({
-    "text": "知识点内容",
-    "category": "coding",
-    "tags": ["python", "async"]
-})
-
-mcp__local-commander-router__kb_search({
-    "query": "RAG 向量搜索",
-    "top_k": 5
-})
-```
-
----
-
-## 🔄 代码审查工作流
-
-完整的代码生成 → 审查 → 修复闭环，实现自动化代码质量保证。
-
-### 工作原理
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    generate_with_review                         │
-├────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ┌─────────┐     ┌─────────┐     ┌─────────┐                  │
-│   │ coder   │────▶│   35b   │────▶│  coder  │──┐               │
-│   │ 生成代码 │     │ 审查代码 │     │ 修复问题 │  │               │
-│   └─────────┘     └─────────┘     └─────────┘  │               │
-│        │               │               ▲       │               │
-│        │               ▼               │       │               │
-│        │         ┌───────────┐         │       │               │
-│        │         │ 有问题？  │─────────┘       │               │
-│        │         └───────────┘                 │               │
-│        │               │                       │               │
-│        │               ▼ 无问题                │               │
-│        │         ┌───────────┐                 │               │
-│        └────────▶│ 返回结果  │◀────────────────┘               │
-│                  └───────────┘   (最多迭代 2 次)                │
-└────────────────────────────────────────────────────────────────┘
-```
-
-### 模型分工与原因
-
-| 模型 | 职责 | 原因 |
-|------|------|------|
-| `coder` (14B) | 代码生成、修复 | 专注代码领域，生成质量高 |
-| `35b` | 代码审查、问题分析 | 参数量大，推理能力强，能发现深层问题 |
-
-**为什么用两个模型？**
-
-- **专业性**: coder 专注代码生成，对语法和模式更熟悉
-- **客观性**: 35b 作为独立审查者，不受生成者偏见影响
-- **互补性**: 生成者可能忽略的问题，审查者能发现
-
-### 详细流程
-
-```
-Step 1: coder 生成代码
-────────────────────────
-输入: "实现用户登录验证"
-输出: 原始代码 v1
-        │
-        ▼
-Step 2: 35b 审查代码
-────────────────────────
-审查维度:
-  ├─ 代码质量: 可读性、命名规范、代码风格
-  ├─ 安全性: 输入验证、注入风险、敏感数据处理
-  ├─ 性能: 算法复杂度、内存使用
-  └─ 最佳实践: 设计模式、错误处理
-输出: 审查报告
-        │
-        ▼
-Step 3: 判断是否需要修复
-────────────────────────
-检查报告是否包含:
-  - "代码质量良好"
-  - "无需修改"
-  - "没有发现"
-
-┌───────┴───────┐
-│               │
-▼ 是            ▼ 否
-返回结果      Step 4: coder 修复代码
-             ────────────────────────
-             输入:
-               - 原始代码
-               - 审查报告中的问题
-             输出: 修复后的代码 v2
-                    │
-                    ▼
-             回到 Step 2 (最多 2 次)
-```
-
-### 审查报告格式
-
-```
-1. 【评分】整体质量评分 (1-10)
-2. 【问题】发现的问题列表（按严重程度排序）
-   - 🔴 严重: SQL 注入风险
-   - 🟡 中等: 变量命名不规范
-   - 🟢 轻微: 缺少注释
-3. 【建议】改进建议
-4. 【优点】代码的优点
-```
-
-### MCP 调用
-
-```python
-# 完整工作流：生成 → 审查 → 修复
-mcp__local-commander-router__generate_with_review({
-    "task": "实现用户登录验证",
-    "language": "TypeScript",
-    "max_fix_iterations": 2  # 最大修复迭代次数
-})
-
-# 返回结果示例
-{
-    "success": true,
-    "final_code": "...修复后的代码...",
-    "review_reports": [
-        {"iteration": 1, "report": "发现问题: ..."},
-        {"iteration": 2, "report": "代码质量良好，无需修改"}
-    ],
-    "iterations": [
-        {"step": "generate", "success": true},
-        {"step": "review", "iteration": 1, "needs_fix": true},
-        {"step": "fix", "iteration": 1, "success": true},
-        {"step": "review", "iteration": 2, "needs_fix": false}
-    ]
-}
-
-# 单独审查代码
-mcp__local-commander-router__review_code({
-    "code": "... 你的代码 ...",
-    "language": "TypeScript",
-    "focus": "all"  # quality / security / performance / all
-})
-
-# 单独修复问题
-mcp__local-commander-router__fix_code({
-    "code": "... 原始代码 ...",
-    "issues": "... 审查报告中的问题 ...",
-    "language": "TypeScript"
-})
-```
-
-### 审查重点选项
-
-| focus | 审查重点 |
-|-------|---------|
-| `quality` | 可读性、可维护性、代码风格、命名规范 |
-| `security` | 输入验证、注入风险、敏感数据处理、权限控制 |
-| `performance` | 算法复杂度、内存使用、数据库查询优化 |
-| `all` | 全面审查：代码质量、安全性、性能、最佳实践 |
-
-### 优势
-
-| 优势 | 说明 |
-|------|------|
-| 🎯 **自动化** | 无需人工干预，自动完成生成-审查-修复循环 |
-| 🔒 **质量保证** | 多轮审查确保代码质量 |
-| 💰 **成本优化** | 本地模型执行，无需调用云端 API |
-| 📊 **可追溯** | 返回完整的迭代记录和审查报告 |
-
----
-
-## 🧪 UI 自动化验收测试
-
-前端开发闭环：写代码 → 自动截图 → VL 分析 → 发现问题 → 自动修复。
-
-### MCP 调用
-
-```python
-# 单页面分析
-mcp__local-commander-router__ui_analyze_page({
-    "url": "http://localhost:3000/tasks",
-    "analysis_prompt": "分析这个页面的功能和问题"
-})
-
-# 批量页面测试
-mcp__local-commander-router__ui_test_pages({
-    "base_url": "http://localhost:3000",
-    "pages": ["/", "/tasks", "/settings"],
-    "page_names": ["首页", "任务管理", "设置"]
-})
-
-# 仅截图
-mcp__local-commander-router__ui_screenshot({
-    "url": "http://localhost:3000",
-    "output_path": "/tmp/screenshot.png"
-})
-
-# 交互测试
-mcp__local-commander-router__ui_click_and_verify({
-    "url": "http://localhost:3000/tasks",
-    "selector": "button.new-task",
-    "verify_type": "screenshot",  # 或 "text", "element"
-    "verify_target": "弹窗是否出现"
-})
-```
-
-### 技术原理
-
-```
-Playwright (浏览器自动化) → 截图 → VL 视觉模型 (图像理解) → 分析报告
-```
-
-### 使用场景
-
-- 前端页面开发完成后自动验收
-- 检测 UI 是否正常渲染
-- 发现功能问题和 UI 缺陷
-- 批量测试多个页面
-
----
-
-## 🧪 自动化测试 (Android/iOS/Web)
-
-支持全平台自动化测试，可与代码生成流程集成。
-
-### CLI 调用
-
-```bash
-# 自动检测项目类型并运行测试
-/local --test
-
-# 指定测试类型
-/local --test --test-type espresso   # Android Espresso
-/local --test --test-type xctest     # iOS XCTest
-/local --test --test-type playwright # Web Playwright
-
-# 指定设备和目标
-/local --test --test-device "emulator-5554"
-/local --test --test-target "com.example.app"
-
-# 智能模式 + 测试 (生成代码后自动测试)
-/local --smart --test "帮我改进登录页面"
-```
-
-### 支持的测试框架
-
-| 平台 | 测试框架 |
-|------|---------|
-| Android | Espresso, UI Automator, Appium |
-| iOS | XCTest, XCUITest |
-| Web | Playwright, Selenium |
-
----
-
-## 📱 Android UI 自动化测试 (ADB 方案)
-
-**无需 Appium，直接使用 ADB 实现 Android UI 自动化！**
-
-### 技术原理
-
-```
-ADB Shell 命令 → UI Automator Dump → XML 解析 → 元素定位 → 操作执行 → VL 视觉验证
-```
-
-**核心优势：**
-- 🚀 **零依赖**: 无需 Appium Server，只需 ADB
-- 🎯 **精准定位**: 通过 text、resource_id、content_desc、class 定位元素
-- 📸 **视觉验证**: 结合 VL 模型分析截图，验证 UI 状态
-- 🔄 **测试序列**: 支持复杂的多步骤测试流程
-
-### 实现架构
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    AndroidUIAutomation                       │
-├─────────────────────────────────────────────────────────────┤
-│  基础操作层                                                  │
-│  ├── tap(x, y)          # 点击坐标                          │
-│  ├── swipe(x1,y1,x2,y2) # 滑动                              │
-│  ├── input_text(text)   # 输入文本                          │
-│  ├── press_key(keycode) # 按键事件                          │
-│  └── screenshot()       # 截图                              │
-├─────────────────────────────────────────────────────────────┤
-│  元素定位层                                                  │
-│  ├── dump_ui()          # 获取 UI 层级 XML                  │
-│  ├── find_element()     # 查找单个元素                      │
-│  ├── find_elements()    # 查找多个元素                      │
-│  └── get_element_center() # 获取元素中心坐标                │
-├─────────────────────────────────────────────────────────────┤
-│  高级操作层                                                  │
-│  ├── tap_element()      # 通过属性定位并点击                │
-│  ├── start_app()        # 启动应用                          │
-│  ├── force_stop()       # 强制停止应用                      │
-│  └── run_test_sequence() # 运行测试序列                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### MCP 工具调用
-
-```python
-# 获取 UI 元素列表
-mcp__local-commander-router__android_dump_ui({})
-
-# 点击元素 (通过属性定位)
-mcp__local-commander-router__android_tap({
-    "text": "登录",           # 可选: 通过文本定位
-    "resource_id": "btn_login", # 可选: 通过 resource-id 定位
-    "content_desc": "登录按钮"  # 可选: 通过 content-desc 定位
-})
-
-# 截图
-mcp__local-commander-router__android_screenshot({
-    "save_path": "/tmp/test.png"  # 可选，默认临时目录
-})
-
-# 运行测试序列
-mcp__local-commander-router__android_run_test({
-    "steps": [
-        {"action": "tap", "element": {"text": "设置"}},
-        {"action": "screenshot"},
-        {"action": "swipe", "x1": 540, "y1": 1500, "x2": 540, "y2": 800},
-        {"action": "tap", "element": {"text": "English"}},
-        {"action": "tap", "element": {"resource_id": "btn_save"}},
-        {"action": "assert_element", "element": {"text": "New Chat"}},
-        {"action": "back"},
-        {"action": "wait", "seconds": 2}
-    ]
-})
-```
-
-### Python 直接使用
-
-```python
-from android_ui_automation import AndroidUIAutomation
-
-# 初始化 (自动检测设备)
-auto = AndroidUIAutomation()
-
-# 获取 UI 元素
-ui = auto.dump_ui()
-print(f"元素数量: {ui['element_count']}")
-
-# 通过文本点击
-auto.tap_element(text="登录")
-
-# 通过 resource_id 点击
-auto.tap_element(resource_id="com.example.app:id/btn_submit")
-
-# 通过 content_desc 点击
-auto.tap_element(content_desc="返回按钮")
-
-# 截图
-path = auto.screenshot("/tmp/screen.png")
-
-# 滑动
-auto.swipe(540, 1500, 540, 800)  # 向上滑动
-
-# 输入文本 (需先点击输入框)
-auto.tap_element(resource_id="input_field")
-auto.input_text("Hello World")
-
-# 按键
-auto.back()  # 返回
-auto.home()  # 回到桌面
-
-# 运行测试序列
-result = auto.run_test_sequence([
-    {"action": "tap", "element": {"text": "设置"}},
-    {"action": "screenshot"},
-    {"action": "back"}
-])
-print(f"通过: {result['passed']}/{result['total']}")
-```
-
-### 支持的操作
-
-| 操作 | 参数 | 说明 |
-|------|------|------|
-| `tap` | `element` | 点击元素 (通过属性定位) |
-| `tap_coords` | `x`, `y` | 点击坐标 |
-| `input` | `text` | 输入文本 |
-| `swipe` | `x1`, `y1`, `x2`, `y2`, `duration` | 滑动 |
-| `back` | - | 返回键 |
-| `home` | - | Home 键 |
-| `screenshot` | `save_path` | 截图 |
-| `wait` | `seconds` | 等待 |
-| `assert_element` | `element` | 断言元素存在 |
-| `start_app` | `package`, `activity` | 启动应用 |
-
-### 元素定位方式
-
-```python
-# 1. 通过文本 (部分匹配)
-auto.tap_element(text="登录")
-
-# 2. 通过 resource-id (部分匹配)
-auto.tap_element(resource_id="btn_login")
-
-# 3. 通过 content-desc (部分匹配)
-auto.tap_element(content_desc="登录按钮")
-
-# 4. 通过 class (部分匹配)
-auto.tap_element(class_name="android.widget.Button")
-
-# 5. 组合定位
-auto.tap_element(text="登录", class_name="Button")
-```
-
-### 与 VL 模型结合
-
-```python
-# 截图 + VL 分析
-from android_ui_automation import AndroidUIAutomation
-
-auto = AndroidUIAutomation()
-
-# 执行操作
-auto.tap_element(text="设置")
-auto.screenshot("/tmp/settings.png")
-
-# 使用 VL 模型分析
-# mcp__local-commander-router__execute_local({
-#     "model": "vl",
-#     "image_path": "/tmp/settings.png",
-#     "task": "分析设置页面，检查是否有语言选项"
-# })
-```
-
-### 系统要求
-
-- **ADB**: Android Debug Bridge (Android SDK)
-- **设备**: 已开启 USB 调试的 Android 设备或模拟器
-- **Python**: 3.10+
-
-### 调试技巧
-
-```bash
-# 检查设备连接
-adb devices
-
-# 手动获取 UI 层级
-adb shell uiautomator dump /sdcard/ui.xml
-adb pull /sdcard/ui.xml
-
-# 手动截图
-adb shell screencap -p /sdcard/screen.png
-adb pull /sdcard/screen.png
-
-# 查看当前 Activity
-adb shell dumpsys activity activities | grep mResumedActivity
-```
-
----
-
-## 项目结构
+### 项目结构
 
 ```
 ~/.claude/skills/local-commander/
-├── SKILL.md                    # Skill 定义 (Claude Code 自动加载)
+├── SKILL.md                    # Skill 定义
 ├── README.md                   # 本文档
+├── setup.sh                    # 一键安装脚本
 ├── local-commander.py          # CLI 入口
 ├── lib/
 │   ├── mcp_router.py           # MCP 服务入口
 │   ├── router.py               # 模型路由
 │   ├── executor.py             # 任务执行器
-│   ├── embedder.py             # BGE-M3 向量化
 │   ├── knowledge_base_chroma.py # ChromaDB 知识库
-│   ├── vl_grounding.py         # VL 视觉定位服务 (多级降级策略)
-│   ├── image_preprocessor.py   # 图像预处理模块 (压缩、格式转换)
-│   ├── android_ui_automation.py # Android UI 自动化 (ADB 方案)
-│   └── testers/                # 自动化测试器
-│       ├── android_tester.py
-│       ├── ios_tester.py
-│       └── web_tester.py
+│   ├── vl_grounding.py         # VL 视觉定位
+│   ├── android_ui_automation.py # Android 自动化
+│   └── testers/                # 测试器
 └── config/
     ├── models.json             # 模型配置
-    └── vl_service.json         # VL 视觉定位服务配置
+    └── vl_service.json         # VL 服务配置
 ```
 
----
+### 数据位置
 
-## 数据存储位置
-
-| 数据 | 位置 | 说明 |
-|------|------|------|
-| MLX 模型 | `~/.cache/huggingface/hub/models--mlx-community--*/` | 4-bit 量化模型 |
-| Embedding 模型 | `~/.cache/huggingface/hub/models--BAAI--bge-m3/` | BGE-M3 向量模型 |
-| 知识库 | `~/.claude/knowledge_chroma/` | ChromaDB 向量数据库 |
-| 会话数据 | `~/.local-commander/` | 历史记录 |
-
----
-
-## 依赖清单
-
-### Python 包
-
-```
-mlx>=0.20.0
-mlx-lm>=0.19.0
-mlx-vlm>=0.1.0
-sentence-transformers>=2.2.0
-chromadb>=0.4.0
-numpy>=1.24.0
-torch>=2.0.0
-```
-
-### Node.js 包 (可选)
-
-```
-playwright>=1.40.0
-```
-
-### 系统依赖
-
-- HuggingFace CLI (`pip install huggingface_hub`)
-- Git LFS (用于下载大模型)
-
----
-
-## 🎯 VL 视觉定位工具
-
-通过自然语言描述定位图像中的 UI 元素，返回坐标用于自动化测试。采用**多级降级策略**确保高精度定位。
-
-### 技术原理
-
-```
-截图 → 图像预处理 → 多级降级定位 → JSON 坐标输出
-         ↓
-   dump_ui (ADB精确) → remote_vl (局域网VL) → local_vl (本地MLX)
-```
-
-### 降级策略说明
-
-| 方法 | 精度 | 速度 | 适用场景 |
-|------|------|------|----------|
-| `dump_ui` | ⭐⭐⭐⭐⭐ | ~100ms | 文本元素、标准 UI |
-| `remote_vl` | ⭐⭐⭐⭐ | ~0.6s | WebView、Canvas、图形元素 |
-| `local_vl` | ⭐⭐⭐ | ~30s | 离线场景 |
-
-### MCP 调用
-
-```python
-# 检测元素（返回边界框）- 自动使用降级策略
-mcp__local-commander-router__vl_detect_element({
-    "image_path": "/tmp/screenshot.png",
-    "prompt": "屏幕中的登录按钮，通常为蓝色或白色的圆角矩形按钮"
-})
-
-# 返回示例
-{
-    "success": true,
-    "elements": [
-        {
-            "label": "登录按钮",
-            "bbox": [120, 340, 280, 420],
-            "center": [200, 380],
-            "confidence": 0.96
-        }
-    ],
-    "image_size": [1080, 2400],
-    "method": "remote_vl"  # 实际使用的方法
-}
-
-# 获取点击坐标（便捷方法）
-mcp__local-commander-router__vl_get_click_coords({
-    "image_path": "/tmp/screenshot.png",
-    "element_desc": "蓝色的登录按钮"
-})
-
-# 返回示例
-{
-    "success": true,
-    "x": 200,
-    "y": 380,
-    "label": "登录按钮",
-    "confidence": 0.96
-}
-
-# 智能定位 - 优先 dump_ui，失败时降级到 VL
-mcp__local-commander-router__vl_smart_locate({
-    "image_path": "/tmp/screenshot.png",
-    "element_desc": "登录按钮",
-    "prefer_dump_ui": true
-})
-
-# 调试模式 - 可视化检测结果
-mcp__local-commander-router__vl_debug_detect({
-    "image_path": "/tmp/screenshot.png",
-    "prompt": "登录按钮",
-    "output_path": "/tmp/debug_result.png"
-})
-# 生成带标注的调试图片，便于验证定位准确性
-
-# 检查服务状态
-mcp__local-commander-router__vl_service_status({})
-```
-
-### 与 Android 自动化结合
-
-```python
-# 1. 截图
-screenshot_result = mcp__local-commander-router__android_screenshot({
-    "save_path": "/tmp/screen.png"
-})
-
-# 2. VL 定位元素
-coords = mcp__local-commander-router__vl_get_click_coords({
-    "image_path": "/tmp/screen.png",
-    "element_desc": "设置按钮，通常是齿轮图标"
-})
-
-# 3. 点击
-if coords.get("success"):
-    mcp__local-commander-router__android_tap({
-        "x": coords["x"],
-        "y": coords["y"]
-    })
-```
-
-### 与 Web 自动化结合
-
-```python
-# 1. 网页截图
-mcp__local-commander-router__ui_screenshot({
-    "url": "http://localhost:3000/login",
-    "output_path": "/tmp/login.png"
-})
-
-# 2. VL 定位并点击
-coords = mcp__local-commander-router__vl_get_click_coords({
-    "image_path": "/tmp/login.png",
-    "element_desc": "提交按钮"
-})
-```
-
-### 支持的 Prompt 技巧
-
-| 技巧 | 示例 |
+| 数据 | 位置 |
 |------|------|
-| 颜色描述 | "蓝色的登录按钮"、"红色的警告弹窗" |
-| 形状描述 | "圆角矩形按钮"、"圆形图标" |
-| 位置描述 | "右上角的设置图标"、"屏幕底部的导航栏" |
-| 文字描述 | "显示'提交'文字的按钮" |
-| 功能描述 | "用于搜索的输入框" |
+| MLX 模型 | `~/.cache/huggingface/hub/` |
+| 知识库 | `~/.claude/knowledge_chroma/` |
 
-### 对比 Dump UI 方案
+### MCP API 文档
 
-| 维度 | Dump UI | VL 视觉定位 |
-|------|---------|------------|
-| **定位方式** | XML 属性匹配 | 视觉语义理解 |
-| **WebView** | ❌ | ✅ |
-| **游戏/Canvas** | ❌ | ✅ |
-| **无障碍标签缺失** | ❌ 无法定位 | ✅ 可识别 |
-| **推理延迟** | ~100ms | ~2-5s |
-| **依赖** | ADB | vLLM 服务 |
+#### 本地模型
 
----
+| 工具 | 说明 |
+|------|------|
+| `execute_local` | 执行本地模型任务 |
+| `classify_task` | 分析任务类型推荐模型 |
+| `route_task` | 路由任务到合适模型 |
+| `generate_with_review` | 代码生成+审查+修复 |
+| `review_code` | 代码审查 |
+| `fix_code` | 代码修复 |
 
-## 常见问题
+#### 知识库
 
-### 1. VL 服务连接失败？
+| 工具 | 说明 |
+|------|------|
+| `kb_add` | 添加知识点 |
+| `kb_search` | 搜索知识 |
+| `kb_list` | 列出知识 |
+| `kb_delete` | 删除知识 |
+| `kb_stats` | 统计信息 |
 
-检查 `config/vl_service.json` 中的 `base_url` 是否正确：
-- 确保服务器 IP 可访问
-- 确保端口正确（默认 8000）
-- 确保 vLLM 服务已启动
+#### Web 自动化
 
-### 2. 模型下载慢？
+| 工具 | 说明 |
+|------|------|
+| `ui_screenshot` | 网页截图 |
+| `ui_analyze_page` | 分析页面 |
+| `ui_test_pages` | 批量测试 |
+| `ui_test_spa` | SPA 路由测试 |
+| `ui_interact` | 交互测试 |
 
+#### Android 自动化
+
+| 工具 | 说明 |
+|------|------|
+| `android_dump_ui` | 获取 UI 元素 |
+| `android_tap` | 点击元素 |
+| `android_screenshot` | 截图 |
+| `android_run_test` | 运行测试序列 |
+
+#### VL 视觉定位
+
+| 工具 | 说明 |
+|------|------|
+| `vl_detect_element` | 检测元素 |
+| `vl_get_click_coords` | 获取点击坐标 |
+| `vl_smart_locate` | 智能定位 |
+| `vl_service_status` | 服务状态 |
+
+### 常见问题
+
+**Q: 模型下载慢？**
 ```bash
-# 使用镜像站
-HF_ENDPOINT=https://hf-mirror.com huggingface-cli download Qwen/Qwen2.5-Coder-14B-Instruct ...
+HF_ENDPOINT=https://hf-mirror.com huggingface-cli download <model>
 ```
 
-### 2. 内存不足？
-
-- 使用量化模型 (4-bit)
-- 减少并发模型数
+**Q: 内存不足？**
+- 使用 4-bit 量化模型
 - 只下载需要的模型
+- 减少 `max_tokens`
 
-### 3. ChromaDB 报错？
-
+**Q: ChromaDB 报错？**
 ```bash
-# 重新安装
 pip3 install --break-system-packages --upgrade chromadb
 ```
 
-### 4. MPS 不可用？
+**Q: MPS 不可用？**
+- 确保 macOS >= 12.3
+- 使用 Apple Silicon Mac
 
-确保 macOS 版本 >= 12.3，且使用 Apple Silicon Mac。
+**Q: VL 服务连接失败？**
+- 检查 `config/vl_service.json` 中的 `base_url`
+- 确保 vLLM 服务已启动
 
 ---
 
 ## 许可证
 
 MIT License
-
-## 贡献
 
 欢迎提交 Issue 和 PR！
