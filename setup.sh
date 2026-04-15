@@ -1,7 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Local Commander - 一键安装脚本
 # 自动检测系统配置并安装最佳模型组合
+#
+# 兼容 bash 3.x+ (macOS 默认 bash)
 #
 
 set -e
@@ -20,31 +22,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$HOME/.claude/skills/local-commander"
 HF_CACHE="$HOME/.cache/huggingface/hub"
 
-# 模型配置 (键名不能以数字开头，使用 model_ 前缀)
-declare -A MODEL_SIZES=(
-    ["model_coder"]=8
-    ["model_vl"]=5
-    ["model_35b"]=18
-    ["model_4b"]=3.5
-)
-
-declare -A MODEL_IDS=(
-    ["model_coder"]="mlx-community/Qwen2.5-Coder-14B-Instruct-4bit"
-    ["model_vl"]="mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
-    ["model_35b"]="custom"
-    ["model_4b"]="custom"
-)
-
-# 获取模型大小
+# 获取模型大小 (兼容 bash 3.x)
 get_model_size() {
-    local model="$1"
-    echo "${MODEL_SIZES[model_$model]}"
+    case "$1" in
+        coder) echo "8" ;;
+        vl)    echo "5" ;;
+        35b)   echo "18" ;;
+        4b)    echo "3.5" ;;
+        *)     echo "0" ;;
+    esac
 }
 
-# 获取模型 ID
+# 获取模型 ID (兼容 bash 3.x)
 get_model_id() {
-    local model="$1"
-    echo "${MODEL_IDS[model_$model]}"
+    case "$1" in
+        coder) echo "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit" ;;
+        vl)    echo "mlx-community/Qwen2.5-VL-7B-Instruct-4bit" ;;
+        35b)   echo "custom" ;;
+        4b)    echo "custom" ;;
+        *)     echo "" ;;
+    esac
 }
 
 # 打印函数
@@ -130,25 +127,25 @@ recommend_config() {
 
     if [[ $TOTAL_MEM_GB -lt 16 ]]; then
         CONFIG="minimal"
-        RECOMMENDED_MODELS=("4b" "coder")
+        RECOMMENDED_MODELS="4b coder"
         print_warning "内存较少 (${TOTAL_MEM_GB}GB)，推荐 minimal 配置"
     elif [[ $TOTAL_MEM_GB -lt 24 ]]; then
         CONFIG="balanced"
-        RECOMMENDED_MODELS=("4b" "coder" "vl")
+        RECOMMENDED_MODELS="4b coder vl"
         print_info "内存适中 (${TOTAL_MEM_GB}GB)，推荐 balanced 配置"
     elif [[ $TOTAL_MEM_GB -lt 32 ]]; then
         CONFIG="standard"
-        RECOMMENDED_MODELS=("4b" "coder" "vl" "35b")
+        RECOMMENDED_MODELS="4b coder vl 35b"
         print_info "内存充足 (${TOTAL_MEM_GB}GB)，推荐 standard 配置"
     else
         CONFIG="full"
-        RECOMMENDED_MODELS=("4b" "coder" "vl" "35b")
+        RECOMMENDED_MODELS="4b coder vl 35b"
         print_success "内存充裕 (${TOTAL_MEM_GB}GB)，推荐 full 配置"
     fi
 
     # 计算预计占用
     TOTAL_SIZE=0
-    for model in "${RECOMMENDED_MODELS[@]}"; do
+    for model in $RECOMMENDED_MODELS; do
         size=$(get_model_size "$model")
         TOTAL_SIZE=$(echo "$TOTAL_SIZE + $size" | bc)
     done
@@ -157,7 +154,7 @@ recommend_config() {
     echo -e "${CYAN}配置详情:${NC}"
     echo "┌─────────────────────────────────────────────┐"
     echo "│ 配置级别: $CONFIG                              "
-    echo "│ 推荐模型: ${RECOMMENDED_MODELS[*]}            "
+    echo "│ 推荐模型: $RECOMMENDED_MODELS                 "
     printf "│ 预计占用: %.1fGB                            \n" "$TOTAL_SIZE"
     echo "└─────────────────────────────────────────────┘"
 
@@ -218,10 +215,10 @@ install_dependencies() {
 download_models() {
     print_section "下载模型"
 
-    local total_models=${#RECOMMENDED_MODELS[@]}
+    local total_models=$(echo "$RECOMMENDED_MODELS" | wc -w | tr -d ' ')
     local current=0
 
-    for model in "${RECOMMENDED_MODELS[@]}"; do
+    for model in $RECOMMENDED_MODELS; do
         current=$((current + 1))
         local model_id=$(get_model_id "$model")
         local size=$(get_model_size "$model")
@@ -370,19 +367,19 @@ interactive_select() {
     case $choice in
         1)
             CONFIG="minimal"
-            RECOMMENDED_MODELS=("4b" "coder")
+            RECOMMENDED_MODELS="4b coder"
             ;;
         2)
             CONFIG="balanced"
-            RECOMMENDED_MODELS=("4b" "coder" "vl")
+            RECOMMENDED_MODELS="4b coder vl"
             ;;
         3)
             CONFIG="standard"
-            RECOMMENDED_MODELS=("4b" "coder" "vl" "35b")
+            RECOMMENDED_MODELS="4b coder vl 35b"
             ;;
         4)
             CONFIG="full"
-            RECOMMENDED_MODELS=("4b" "coder" "vl" "35b")
+            RECOMMENDED_MODELS="4b coder vl 35b"
             ;;
         5)
             echo ""
@@ -393,7 +390,7 @@ interactive_select() {
             echo "  - 4b (3.5GB): 快速问答"
             echo ""
             read -p "请输入要安装的模型 (空格分隔，如: coder vl 4b): " custom_models
-            RECOMMENDED_MODELS=($custom_models)
+            RECOMMENDED_MODELS="$custom_models"
             CONFIG="custom"
             ;;
         6)
