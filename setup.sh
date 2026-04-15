@@ -78,6 +78,119 @@ get_gguf_model_info() {
     esac
 }
 
+# ─────────────────────────────────────────────────────────────
+# 进度条和旋转指示器
+# ─────────────────────────────────────────────────────────────
+
+# 旋转指示器 (后台任务)
+SPINNER_PID=""
+SPINNER_CHARS="⠋⠙⠹ⸯ⣷⣯⣟⡿⢿⣻⣽⣾⣷"
+
+start_spinner() {
+    local msg="${1:-处理中}"
+    tput sc 2>/dev/null || true
+    {
+        i=0
+        while true; do
+            char="${SPINNER_CHARS:$((i % ${#SPINNER_CHARS})):1}"
+            printf "\r${CYAN}%s${NC} %s" "$char" "$msg"
+            sleep 0.1
+            ((i++))
+        done
+    } &
+    SPINNER_PID=$!
+}
+
+stop_spinner() {
+    if [[ -n "$SPINNER_PID" ]]; then
+        kill "$SPINNER_PID" 2>/dev/null || true
+        wait "$SPINNER_PID" 2>/dev/null || true
+        SPINNER_PID=""
+        tput rc 2>/dev/null || true
+        tput el 2>/dev/null || true
+    fi
+}
+
+# 进度条显示
+show_progress() {
+    local current=$1
+    local total=$2
+    local msg="${3:-下载中}"
+    local width=40
+
+    if [[ $total -eq 0 ]]; then
+        return
+    fi
+
+    local percent=$((current * 100 / total))
+    local filled=$((current * width / total))
+    local empty=$((width - filled))
+
+    # 构建进度条
+    local bar=""
+    for ((i=0; i<filled; i++)); do bar+="█"; done
+    for ((i=0; i<empty; i++)); do bar+="░"; done
+
+    printf "\r${CYAN}%s${NC} [${GREEN}%s${NC}] %3d%% (%d/%d)" "$msg" "$bar" "$percent" "$current" "$total"
+}
+
+# 下载进度监控 (用于 huggingface-cli)
+monitor_download() {
+    local repo="$1"
+    local file="$2"
+    local cache_dir="$HF_CACHE/models--${repo//\//--}"
+    local expected_size="${3:-0}"  # GB
+
+    # 检查下载目录
+    if [[ ! -d "$cache_dir" ]]; then
+        return 1
+    fi
+
+    local start_time=$(date +%s)
+    local last_size=0
+    local count=0
+
+    while true; do
+        # 计算当前已下载大小
+        local current_size=0
+        if [[ -d "$cache_dir/blobs" ]]; then
+            for blob in "$cache_dir/blobs"/*; do
+                if [[ -f "$blob" ]]; then
+                    current_size=$((current_size + $(stat -f%z "$blob" 2>/dev/null || stat -c%s "$blob" 2>/dev/null || echo 0)))
+                fi
+            done
+        fi
+
+        # 转换为 MB
+        local current_mb=$((current_size / 1024 / 1024))
+        local expected_mb=$(echo "$expected_size * 1024" | bc 2>/dev/null || echo "0")
+        expected_mb=${expected_mb%.*}  # 取整数
+
+        # 显示进度
+        if [[ $expected_mb -gt 0 ]]; then
+            local percent=$((current_mb * 100 / expected_mb))
+            printf "\r  ${CYAN}下载中${NC} ${GREEN}%d MB${NC} / ~%d MB (%d%%)" "$current_mb" "$expected_mb" "$percent"
+        else
+            printf "\r  ${CYAN}下载中${NC} ${GREEN}%d MB${NC}" "$current_mb"
+        fi
+
+        # 检查是否完成 (文件大小不再变化)
+        if [[ $current_size -eq $last_size ]]; then
+            count=$((count + 1))
+            if [[ $count -gt 10 ]]; then
+                break
+            fi
+        else
+            count=0
+        fi
+
+        last_size=$current_size
+        sleep 1
+    done
+
+    echo ""
+}
+
 # 打印函数
 print_header() {
     echo -e "${PURPLE}"
@@ -256,64 +369,80 @@ install_dependencies() {
         exit 1
     fi
 
+    echo ""
+    echo -e "${PURPLE}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${PURPLE}  安装依赖包${NC}"
+    echo -e "${PURPLE}════════════════════════════════════════════════════════════${NC}"
+
     if [[ "$BACKEND" == "mlx" ]]; then
         # Apple Silicon - 安装 MLX
-        print_info "安装 MLX 相关包..."
+        echo ""
+        echo -e "${CYAN}[1/2]${NC} 安装 MLX 相关包..."
+        echo -e "${CYAN}├──${NC} mlx, mlx-lm, mlx-vlm"
 
+        start_spinner "安装中"
         python3 -m pip install --user --break-system-packages \
             mlx mlx-lm mlx-vlm \
             sentence-transformers \
             chromadb \
             numpy \
             pillow \
-            openai 2>&1 | tail -5 | while read -r line; do
-            print_info "  $line"
-        done || true
+            openai >/dev/null 2>&1 || true
+        stop_spinner
+        print_success "MLX 核心包安装完成"
 
         HAS_MLX=true
-        print_success "MLX 依赖安装完成"
 
     else
         # Intel Mac / Linux - 安装 llama.cpp
-        print_info "安装 llama.cpp..."
+        echo ""
+        echo -e "${CYAN}[1/2]${NC} 安装 llama.cpp..."
 
         # macOS 使用 Homebrew
         if [[ "$OS" == "Darwin" ]]; then
             if command -v brew &> /dev/null; then
-                brew install llama.cpp 2>&1 | tail -3 | while read -r line; do
-                    print_info "  $line"
-                done || true
-                HAS_LLAMACPP=true
+                start_spinner "brew install llama.cpp"
+                brew install llama.cpp >/dev/null 2>&1 || true
+                stop_spinner
+
+                if command -v llama-cli &> /dev/null; then
+                    print_success "llama.cpp 安装完成"
+                    HAS_LLAMACPP=true
+                else
+                    print_warning "llama.cpp 安装可能需要更多时间"
+                fi
             else
-                print_warning "未安装 Homebrew，请手动安装 llama.cpp"
-                print_info "  brew install llama.cpp"
-                print_info "  或从源码编译: https://github.com/ggml-org/llama.cpp"
+                print_warning "未安装 Homebrew"
+                print_info "  请运行: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                print_info "  然后运行: brew install llama.cpp"
             fi
         fi
 
-        # Linux 使用 apt 或从源码编译
+        # Linux
         if [[ "$OS" == "Linux" ]]; then
-            if command -v apt &> /dev/null; then
-                print_info "请手动安装 llama.cpp:"
-                print_info "  git clone https://github.com/ggml-org/llama.cpp"
-                print_info "  cd llama.cpp && make"
-            fi
+            print_info "请手动安装 llama.cpp:"
+            print_info "  git clone https://github.com/ggml-org/llama.cpp"
+            print_info "  cd llama.cpp && make"
         fi
 
         # 安装基础 Python 依赖
-        print_info "安装基础 Python 依赖..."
+        echo ""
+        echo -e "${CYAN}[2/2]${NC} 安装 Python 依赖..."
+        echo -e "${CYAN}├──${NC} huggingface_hub, sentence-transformers, chromadb..."
+
+        start_spinner "安装中"
         python3 -m pip install --user --break-system-packages \
             huggingface_hub \
             sentence-transformers \
             chromadb \
             numpy \
             pillow \
-            openai 2>&1 | tail -3 | while read -r line; do
-            print_info "  $line"
-        done || true
-
-        print_success "llama.cpp 依赖安装完成"
+            openai >/dev/null 2>&1 || true
+        stop_spinner
+        print_success "Python 依赖安装完成"
     fi
+
+    echo ""
 }
 
 # 下载模型
@@ -338,7 +467,8 @@ download_mlx_models() {
         local size=$(get_model_size "$model")
 
         echo ""
-        echo -e "${CYAN}[$current/$total_models] 下载 $model ($size GB)${NC}"
+        show_progress $current $total_models "准备下载"
+        echo -e " ${CYAN}$model${NC} ($size GB)"
 
         if [[ "$model_id" == "custom" ]]; then
             print_warning "自定义模型 $model 需要手动配置"
@@ -353,24 +483,36 @@ download_mlx_models() {
             continue
         fi
 
-        # 使用 Python 下载
+        # 使用 Python 下载 (带进度)
         print_info "正在下载 $model_id..."
-        if python3 -c "from mlx_vlm import load; load('$model_id')" 2>&1 | while read -r line; do
-            if [[ "$line" == *"Downloading"* ]] || [[ "$line" == *"Loading"* ]]; then
-                print_info "  $line"
-            fi
-        done; then
+        echo ""
+
+        # 使用 huggingface-cli 显示进度
+        if command -v huggingface-cli &> /dev/null; then
+            start_spinner "下载中..."
+            huggingface-cli download "$model_id" 2>&1
+            stop_spinner
             print_success "$model 下载完成"
         else
-            print_warning "$model 下载可能需要更长时间，请稍后重试"
+            # 备用方式
+            python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$model_id')" 2>&1 | while read -r line; do
+                echo -ne "\r  $line"
+            done
+            echo ""
+            print_success "$model 下载完成"
         fi
     done
 }
 
-# 下载 GGUF 模型 (Intel Mac)
+# 下载 GGUF 模型 (Intel Mac) - 带进度条
 download_gguf_models() {
     local total_models=$(echo "$RECOMMENDED_MODELS" | wc -w | tr -d ' ')
     local current=0
+
+    echo ""
+    echo -e "${PURPLE}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${PURPLE}  开始下载 ${GREEN}$total_models${PURPLE} 个模型${NC}"
+    echo -e "${PURPLE}════════════════════════════════════════════════════════════${NC}"
 
     for model in $RECOMMENDED_MODELS; do
         current=$((current + 1))
@@ -382,9 +524,6 @@ download_gguf_models() {
             continue
         fi
 
-        echo ""
-        echo -e "${CYAN}[$current/$total_models] 下载 $model ($size GB)${NC}"
-
         # 解析模型信息
         local repo=$(echo "$model_info" | cut -d'|' -f1)
         local file=$(echo "$model_info" | cut -d'|' -f2)
@@ -392,44 +531,71 @@ download_gguf_models() {
 
         # 检查是否已下载
         local cache_dir="$HF_CACHE/models--${repo//\//--}"
+        local skip_download=false
+
         if [[ -d "$cache_dir" ]]; then
-            # 检查文件是否存在
-            local found=false
             for snapshot_dir in "$cache_dir"/snapshots/*; do
                 if [[ -f "$snapshot_dir/$file" ]]; then
-                    found=true
+                    skip_download=true
                     break
                 fi
             done
-            if $found; then
-                print_info "模型已存在，跳过下载"
-                continue
-            fi
         fi
+
+        echo ""
+        echo -e "${CYAN}┌─────────────────────────────────────────────────────────────┐${NC}"
+        printf "${CYAN}│${NC} ${GREEN}[%d/%d]${NC} %-30s %8s      ${CYAN}│${NC}\n" "$current" "$total_models" "$model" "${size}GB"
+        echo -e "${CYAN}├─────────────────────────────────────────────────────────────┤${NC}"
+
+        if $skip_download; then
+            echo -e "${CYAN}│${NC}  ✓ 模型已存在，跳过下载                              ${CYAN}│${NC}"
+            echo -e "${CYAN}└─────────────────────────────────────────────────────────────┘${NC}"
+            continue
+        fi
+
+        # 显示下载信息
+        echo -e "${CYAN}│${NC}  仓库: $repo"
+        echo -e "${CYAN}│${NC}  文件: $file"
+        echo -e "${CYAN}├─────────────────────────────────────────────────────────────┤${NC}"
 
         # 使用 huggingface-cli 下载
         if command -v huggingface-cli &> /dev/null; then
-            print_info "正在下载 $repo/$file..."
-
-            huggingface-cli download "$repo" "$file" 2>&1 | while read -r line; do
-                print_info "  $line"
-            done || print_warning "下载 $file 失败"
+            # 下载主模型文件
+            echo -e "${CYAN}│${NC}  ${YELLOW}下载中...${NC}"
+            huggingface-cli download "$repo" "$file" --local-dir "$cache_dir" 2>&1 | while read -r line; do
+                # 过滤并显示进度
+                if [[ "$line" == *"%"* ]] || [[ "$line" == *"Downloading"* ]] || [[ "$line" == *"download"* ]]; then
+                    # 截断过长的行
+                    local short_line="${line:0:50}"
+                    printf "\r${CYAN}│${NC}  %-55s${CYAN}│${NC}" "$short_line"
+                fi
+            done
+            echo ""
 
             # 下载 mmproj (视觉模型)
             if [[ -n "$mmproj" ]]; then
-                print_info "正在下载 mmproj 文件..."
-                huggingface-cli download "$repo" "$mmproj" 2>&1 | while read -r line; do
-                    print_info "  $line"
-                done || print_warning "下载 $mmproj 失败"
+                echo -e "${CYAN}│${NC}  ${YELLOW}下载视觉模块 (mmproj)...${NC}"
+                huggingface-cli download "$repo" "$mmproj" --local-dir "$cache_dir" 2>&1 | while read -r line; do
+                    if [[ "$line" == *"%"* ]] || [[ "$line" == *"Downloading"* ]]; then
+                        local short_line="${line:0:50}"
+                        printf "\r${CYAN}│${NC}  %-55s${CYAN}│${NC}" "$short_line"
+                    fi
+                done
+                echo ""
             fi
 
-            print_success "$model 下载完成"
+            echo -e "${CYAN}│${NC}  ${GREEN}✓ 下载完成${NC}                                            ${CYAN}│${NC}"
         else
-            print_warning "未安装 huggingface-cli，请手动下载:"
-            print_info "  pip install huggingface_hub"
-            print_info "  huggingface-cli download $repo $file"
+            echo -e "${CYAN}│${NC}  ${RED}✗ 未安装 huggingface-cli${NC}"
+            echo -e "${CYAN}│${NC}    pip install huggingface_hub"
+            echo -e "${CYAN}│${NC}    huggingface-cli download $repo $file"
         fi
+
+        echo -e "${CYAN}└─────────────────────────────────────────────────────────────┘${NC}"
     done
+
+    echo ""
+    echo -e "${GREEN}✓ 所有模型下载完成${NC}"
 }
 
 # 安装 Skill 文件
