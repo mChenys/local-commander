@@ -548,19 +548,28 @@ download_mlx_models() {
         print_info "正在下载 $model_id..."
         echo ""
 
-        # 使用 huggingface-cli 显示进度
+        # 尝试找到 huggingface-cli
+        local hf_cli=""
         if command -v huggingface-cli &> /dev/null; then
+            hf_cli="huggingface-cli"
+        elif [[ -x "$HOME/.local/bin/huggingface-cli" ]]; then
+            hf_cli="$HOME/.local/bin/huggingface-cli"
+        elif compgen -G "$HOME/Library/Python/*/bin/huggingface-cli" &>/dev/null; then
+            hf_cli=$(compgen -G "$HOME/Library/Python/*/bin/huggingface-cli" | head -1)
+        fi
+
+        if [[ -n "$hf_cli" ]]; then
             start_spinner "下载中..."
-            huggingface-cli download "$model_id" 2>&1
+            "$hf_cli" download "$model_id" 2>&1
             stop_spinner
             print_success "$model 下载完成"
         else
-            # 备用方式
-            python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$model_id')" 2>&1 | while read -r line; do
-                echo -ne "\r  $line"
-            done
-            echo ""
-            print_success "$model 下载完成"
+            # 备用方式：Python
+            python3 << PYEOF
+from huggingface_hub import snapshot_download
+snapshot_download('$model_id')
+print('✓ $model 下载完成')
+PYEOF
         fi
     done
 }
@@ -619,27 +628,34 @@ download_gguf_models() {
         echo -e "${CYAN}│${NC}  文件: $file"
         echo -e "${CYAN}├─────────────────────────────────────────────────────────────┤${NC}"
 
-        # 使用 huggingface-cli 下载
+        # 使用 huggingface-cli 或 Python 下载
+        local hf_cli=""
+
+        # 尝试多种方式找到 huggingface-cli
         if command -v huggingface-cli &> /dev/null; then
+            hf_cli="huggingface-cli"
+        elif [[ -x "$HOME/.local/bin/huggingface-cli" ]]; then
+            hf_cli="$HOME/.local/bin/huggingface-cli"
+        elif compgen -G "$HOME/Library/Python/*/bin/huggingface-cli" &>/dev/null; then
+            hf_cli=$(compgen -G "$HOME/Library/Python/*/bin/huggingface-cli" | head -1)
+        fi
+
+        if [[ -n "$hf_cli" ]]; then
             # 下载主模型文件
             echo -e "${CYAN}│${NC}  ${YELLOW}下载中...${NC}"
-            huggingface-cli download "$repo" "$file" --local-dir "$cache_dir" 2>&1 | while read -r line; do
-                # 过滤并显示进度
+            "$hf_cli" download "$repo" "$file" --local-dir "$cache_dir" 2>&1 | while read -r line; do
                 if [[ "$line" == *"%"* ]] || [[ "$line" == *"Downloading"* ]] || [[ "$line" == *"download"* ]]; then
-                    # 截断过长的行
-                    local short_line="${line:0:50}"
-                    printf "\r${CYAN}│${NC}  %-55s${CYAN}│${NC}" "$short_line"
+                    printf "\r${CYAN}│${NC}  %-55s${NC}" "${line:0:50}"
                 fi
             done
             echo ""
 
             # 下载 mmproj (视觉模型)
             if [[ -n "$mmproj" ]]; then
-                echo -e "${CYAN}│${NC}  ${YELLOW}下载视觉模块 (mmproj)...${NC}"
-                huggingface-cli download "$repo" "$mmproj" --local-dir "$cache_dir" 2>&1 | while read -r line; do
+                echo -e "${CYAN}│${NC}  ${YELLOW}下载视觉模块...${NC}"
+                "$hf_cli" download "$repo" "$mmproj" --local-dir "$cache_dir" 2>&1 | while read -r line; do
                     if [[ "$line" == *"%"* ]] || [[ "$line" == *"Downloading"* ]]; then
-                        local short_line="${line:0:50}"
-                        printf "\r${CYAN}│${NC}  %-55s${CYAN}│${NC}" "$short_line"
+                        printf "\r${CYAN}│${NC}  %-55s${NC}" "${line:0:50}"
                     fi
                 done
                 echo ""
@@ -647,9 +663,24 @@ download_gguf_models() {
 
             echo -e "${CYAN}│${NC}  ${GREEN}✓ 下载完成${NC}                                            ${CYAN}│${NC}"
         else
-            echo -e "${CYAN}│${NC}  ${RED}✗ 未安装 huggingface-cli${NC}"
-            echo -e "${CYAN}│${NC}    pip install huggingface_hub"
-            echo -e "${CYAN}│${NC}    huggingface-cli download $repo $file"
+            # 备用：使用 Python 直接下载
+            echo -e "${CYAN}│${NC}  ${YELLOW}使用 Python 下载...${NC}"
+            python3 << PYEOF
+import os
+from huggingface_hub import hf_hub_download
+os.makedirs('$cache_dir', exist_ok=True)
+print('下载主模型...')
+hf_hub_download(repo_id='$repo', filename='$file', local_dir='$cache_dir')
+print('✓ 主模型下载完成')
+PYEOF
+            if [[ -n "$mmproj" ]]; then
+                python3 << PYEOF
+from huggingface_hub import hf_hub_download
+hf_hub_download(repo_id='$repo', filename='$mmproj', local_dir='$cache_dir')
+print('✓ 视觉模块下载完成')
+PYEOF
+            fi
+            echo -e "${CYAN}│${NC}  ${GREEN}✓ 下载完成${NC}                                            ${CYAN}│${NC}"
         fi
 
         echo -e "${CYAN}└─────────────────────────────────────────────────────────────┘${NC}"
@@ -894,8 +925,8 @@ print_completion() {
     echo -e "${NC}"
     echo ""
     echo -e "${CYAN}系统配置:${NC}"
-    echo "  后端: ${GREEN}$BACKEND${NC}"
-    echo "  架构: $ARCH"
+    echo -e "  后端: ${GREEN}$BACKEND${NC}"
+    echo -e "  架构: $ARCH"
     echo ""
     echo -e "${CYAN}下一步:${NC}"
     echo ""
