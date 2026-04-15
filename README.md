@@ -8,13 +8,85 @@
 |------|------|------|
 | 🤖 代码生成 | Qwen2.5-Coder-14B | 生成、审查、Debug |
 | 👁️ 图像分析 | Qwen2.5-VL-7B | UI验证、OCR、截图分析 |
-| 🧠 复杂推理 | Qwen3.5-27B | 架构设计、方案评估 |
-| ⚡ 快速问答 | Qwen2.5-7B | 轻量对话 |
+| 🧠 复杂推理 | Qwen3.5-35B MoE Claude Distilled | 架构设计、方案评估、深度分析 |
+| ⚡ 快速问答 | Qwen3-4B GPT-5.1 Distilled | 轻量对话、简单代码 |
 | 📚 AI 知识库 | BGE-M3 + ChromaDB | 持久化知识存储 |
 | 🧪 Web 自动化测试 | Playwright + VL | UI 自动化验收测试 |
 | 📱 Android 自动化 | ADB + VL | 无需 Appium 的 UI 测试 |
 | 🎯 VL 视觉定位 | dump_ui → remote_vl → local_vl | 多级降级策略，精准定位 UI 元素 |
-| 🔄 代码审查流 | Coder + 27B | 生成 → 审查 → 修复 |
+| 🔄 代码审查流 | Coder + 35B | 生成 → 审查 → 修复 |
+
+---
+
+## 🚀 如何接入
+
+### 一键安装脚本
+
+运行以下命令，自动检测系统配置并安装最佳模型组合：
+
+```bash
+# 下载并运行安装脚本
+curl -fsSL https://raw.githubusercontent.com/mChenys/local-commander/main/setup.sh | bash
+
+# 或者克隆仓库后运行
+git clone https://github.com/mChenys/local-commander.git
+cd local-commander
+./setup.sh
+```
+
+### 安装脚本功能
+
+脚本会自动完成以下操作：
+
+1. **系统检测**
+   - 检测操作系统 (macOS/Linux)
+   - 检测 CPU 架构 (Apple Silicon/Intel/AMD)
+   - 检测可用内存
+   - 检测 GPU (NVIDIA/Apple Metal)
+
+2. **智能推荐模型组合**
+
+   | 内存 | 推荐配置 | 模型组合 | 预计占用 |
+   |------|---------|---------|---------|
+   | < 16GB | `minimal` | 4b + coder | ~12GB |
+   | 16-24GB | `balanced` | 4b + coder + vl | ~16GB |
+   | 24-32GB | `standard` | 4b + coder + vl + 35b | ~34GB |
+   | > 32GB | `full` | 全部模型 | ~42GB |
+
+3. **自动安装**
+   - 安装 Python 依赖 (mlx, mlx-lm, mlx-vlm 等)
+   - 下载推荐的模型
+   - 配置 MCP 服务
+   - 验证安装结果
+
+### 手动安装
+
+如果你想手动安装，请参考下方的详细步骤。
+
+### 模型推荐指南
+
+根据你的使用场景选择模型：
+
+| 使用场景 | 推荐模型 | 内存需求 |
+|---------|---------|---------|
+| 日常代码编写 | `coder` (14B) | 8GB |
+| 快速问答/简单代码 | `4b` | 3.5GB |
+| 图像分析/UI验证 | `vl` (7B) | 5GB |
+| 架构设计/复杂推理 | `35b` | 18GB |
+| 全功能使用 | 全部 | 34GB+ |
+
+### 安装验证
+
+```bash
+# 验证模型配置
+python3 ~/.claude/skills/local-commander/local-commander.py --validate
+
+# 列出已安装模型
+python3 ~/.claude/skills/local-commander/local-commander.py --models
+
+# 测试知识库
+python3 ~/.claude/skills/local-commander/local-commander.py --kb-stats
+```
 
 ---
 
@@ -154,8 +226,8 @@ pip3 install --break-system-packages mlx-vlm
 |------|---------|------|------|
 | `coder` | `mlx-community/Qwen2.5-Coder-14B-Instruct-4bit` | ~8GB | 代码生成 |
 | `vl` | `mlx-community/Qwen2.5-VL-7B-Instruct-4bit` | ~5GB | 图像分析 |
-| `27b` | `mlx-community/Qwen3.5-27B-4bit` | ~15GB | 复杂推理 |
-| `7b` | `mlx-community/Qwen2.5-7B-Instruct-4bit` | ~4GB | 快速问答 |
+| `35b` | 自定义路径 (MoE Claude Distilled) | ~18GB | 复杂推理、深度分析 |
+| `4b` | 自定义路径 (GPT-5.1 Distilled) | ~3.5GB | 快速问答、简单代码 |
 
 #### 🔄 模型自动下载机制
 
@@ -188,10 +260,10 @@ mlx-vlm 检查模型是否已存在于本地缓存
 
 | 首次执行 | 自动下载模型 |
 |---------|------------|
-| `/local 你好` | `7b` (~4GB) |
+| `/local 你好` | `4b` (~3.5GB) |
 | `/local 写代码` | `coder` (~8GB) |
 | `/local --image xxx 分析图片` | `vl` (~5GB) |
-| `/local --model 27b 复杂问题` | `27b` (~15GB) |
+| `/local --model 35b 复杂问题` | `35b` (~15GB) |
 
 **模型存储位置：**
 
@@ -274,7 +346,7 @@ python3 ~/.claude/skills/local-commander/local-commander.py --kb-stats
 
 # 执行任务
 /local 写一个 Kotlin 扩展函数
-/local --model 27b 设计支付架构
+/local --model 35b 设计支付架构
 /local --image ~/Downloads/screenshot.png 分析这个UI
 
 # 知识库操作
@@ -325,7 +397,7 @@ mcp__local-commander-router__kb_search({
 ├────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │   ┌─────────┐     ┌─────────┐     ┌─────────┐                  │
-│   │ coder   │────▶│   27b   │────▶│  coder  │──┐               │
+│   │ coder   │────▶│   35b   │────▶│  coder  │──┐               │
 │   │ 生成代码 │     │ 审查代码 │     │ 修复问题 │  │               │
 │   └─────────┘     └─────────┘     └─────────┘  │               │
 │        │               │               ▲       │               │
@@ -346,12 +418,12 @@ mcp__local-commander-router__kb_search({
 | 模型 | 职责 | 原因 |
 |------|------|------|
 | `coder` (14B) | 代码生成、修复 | 专注代码领域，生成质量高 |
-| `27b` | 代码审查、问题分析 | 参数量大，推理能力强，能发现深层问题 |
+| `35b` | 代码审查、问题分析 | 参数量大，推理能力强，能发现深层问题 |
 
 **为什么用两个模型？**
 
 - **专业性**: coder 专注代码生成，对语法和模式更熟悉
-- **客观性**: 27b 作为独立审查者，不受生成者偏见影响
+- **客观性**: 35b 作为独立审查者，不受生成者偏见影响
 - **互补性**: 生成者可能忽略的问题，审查者能发现
 
 ### 详细流程
@@ -363,7 +435,7 @@ Step 1: coder 生成代码
 输出: 原始代码 v1
         │
         ▼
-Step 2: 27b 审查代码
+Step 2: 35b 审查代码
 ────────────────────────
 审查维度:
   ├─ 代码质量: 可读性、命名规范、代码风格
