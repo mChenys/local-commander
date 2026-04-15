@@ -21,6 +21,7 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$HOME/.claude/skills/local-commander"
 HF_CACHE="$HOME/.cache/huggingface/hub"
+HAS_MLX=false
 
 # 获取模型大小 (兼容 bash 3.x)
 get_model_size() {
@@ -125,6 +126,30 @@ detect_system() {
 recommend_config() {
     print_section "推荐模型配置"
 
+    # 检查是否为 Apple Silicon
+    if [[ "$OS" != "Darwin" || "$ARCH" != "arm64" ]]; then
+        CONFIG="cloud"
+        RECOMMENDED_MODELS=""
+        print_warning "非 Apple Silicon Mac，本地模型不可用"
+        print_info ""
+        print_info "系统要求："
+        print_info "  - macOS Apple Silicon (M1/M2/M3/M4)"
+        print_info "  - 推荐 16GB+ 内存"
+        print_info ""
+        print_info "可选方案："
+        print_info "  1. 使用云端模型 API (需要 API Key)"
+        print_info "  2. 在 Apple Silicon Mac 上运行"
+        print_info "  3. 使用 NVIDIA GPU 的 Linux 机器"
+        echo ""
+        echo -e "${CYAN}配置详情:${NC}"
+        echo "┌─────────────────────────────────────────────┐"
+        echo "│ 配置级别: cloud (云端模型)                   "
+        echo "│ 本地模型: 不可用                             "
+        echo "│ 需要配置 API Key                             "
+        echo "└─────────────────────────────────────────────┘"
+        return
+    fi
+
     if [[ $TOTAL_MEM_GB -lt 16 ]]; then
         CONFIG="minimal"
         RECOMMENDED_MODELS="4b coder"
@@ -157,12 +182,6 @@ recommend_config() {
     echo "│ 推荐模型: $RECOMMENDED_MODELS                 "
     printf "│ 预计占用: %.1fGB                            \n" "$TOTAL_SIZE"
     echo "└─────────────────────────────────────────────┘"
-
-    # 检查是否为 Apple Silicon
-    if [[ "$OS" != "Darwin" || "$ARCH" != "arm64" ]]; then
-        print_warning "非 Apple Silicon Mac，部分功能可能受限"
-        print_info "建议使用 NVIDIA GPU 或云服务运行大模型"
-    fi
 }
 
 # 安装 Python 依赖
@@ -180,40 +199,71 @@ install_dependencies() {
         exit 1
     fi
 
-    print_info "安装 MLX 相关包..."
+    # 检查是否为 Apple Silicon
+    if [[ "$OS" != "Darwin" || "$ARCH" != "arm64" ]]; then
+        print_warning "非 Apple Silicon Mac，本地模型功能不可用"
+        print_info "Local Commander 将仅支持云端模型调用"
+        print_info ""
+        print_info "可选方案："
+        print_info "  1. 使用云端模型（需要 API Key）"
+        print_info "  2. 使用 NVIDIA GPU 的 Linux 机器"
+        print_info "  3. 在 Apple Silicon Mac 上运行"
+        print_info ""
 
-    # 根据系统选择依赖
-    if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
-        # Apple Silicon Mac
+        # 非交互模式自动继续
+        if is_interactive; then
+            read -p "是否继续安装（仅 MCP 配置）? [y/N]: " continue_install
+            if [[ "$continue_install" != "y" && "$continue_install" != "Y" ]]; then
+                echo "取消安装"
+                exit 0
+            fi
+        else
+            print_info "自动继续安装..."
+        fi
+
+        # 只安装基础依赖（不含 MLX 和 sentence-transformers）
+        print_info "安装基础依赖..."
         python3 -m pip install --user --break-system-packages \
-            mlx mlx-lm mlx-vlm \
-            sentence-transformers \
-            chromadb \
-            numpy \
-            pillow \
-            openai 2>&1 | while read -r line; do
-                print_info "  $line"
-            done
-    else
-        # Linux / Intel Mac
-        print_warning "非 Apple Silicon，跳过 MLX 安装"
-        print_info "安装替代依赖..."
-        python3 -m pip install --user --break-system-packages \
-            sentence-transformers \
-            chromadb \
-            numpy \
-            pillow \
-            openai 2>&1 | while read -r line; do
-                print_info "  $line"
-            done
+            openai 2>&1 | tail -3 | while read -r line; do
+            print_info "  $line"
+        done || true
+
+        HAS_MLX=false
+        print_success "基础依赖安装完成"
+        return
     fi
 
+    print_info "安装 MLX 相关包..."
+
+    # Apple Silicon Mac
+    python3 -m pip install --user --break-system-packages \
+        mlx mlx-lm mlx-vlm \
+        sentence-transformers \
+        chromadb \
+        numpy \
+        pillow \
+        openai 2>&1 | tail -5 | while read -r line; do
+            print_info "  $line"
+        done || true
+
+    HAS_MLX=true
     print_success "Python 依赖安装完成"
 }
 
 # 下载模型
 download_models() {
     print_section "下载模型"
+
+    # 检查是否为 Apple Silicon
+    if [[ "$OS" != "Darwin" || "$ARCH" != "arm64" ]]; then
+        print_warning "非 Apple Silicon Mac，跳过本地模型下载"
+        print_info "Local Commander 将使用云端模型"
+        print_info ""
+        print_info "配置云端模型 API Key："
+        print_info "  编辑 ~/.claude/skills/local-commander/config/models.json"
+        print_info "  设置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY"
+        return
+    fi
 
     local total_models=$(echo "$RECOMMENDED_MODELS" | wc -w | tr -d ' ')
     local current=0
@@ -259,16 +309,49 @@ install_skill() {
     print_section "安装 Skill 文件"
 
     # 创建目录
-    mkdir -p "$HOME/.claude/skills"
+    mkdir -p "$SKILL_DIR"
 
-    # 复制文件
-    if [[ "$SCRIPT_DIR" != "$SKILL_DIR" ]]; then
-        print_info "复制文件到 $SKILL_DIR..."
-        cp -r "$SCRIPT_DIR" "$SKILL_DIR"
+    # 检查是否在管道模式
+    if ! is_interactive; then
+        # 管道模式：从 GitHub 下载
+        print_info "从 GitHub 下载文件..."
+
+        # 下载 zip 文件
+        local tmp_dir=$(mktemp -d)
+        local zip_url="https://github.com/mChenys/local-commander/archive/refs/heads/main.zip"
+
+        if command -v curl &> /dev/null; then
+            curl -fsSL "$zip_url" -o "$tmp_dir/local-commander.zip"
+        elif command -v wget &> /dev/null; then
+            wget -q "$zip_url" -O "$tmp_dir/local-commander.zip"
+        else
+            print_error "需要 curl 或 wget 来下载文件"
+            exit 1
+        fi
+
+        # 解压
+        if command -v unzip &> /dev/null; then
+            unzip -q "$tmp_dir/local-commander.zip" -d "$tmp_dir"
+        else
+            print_error "需要 unzip 来解压文件"
+            exit 1
+        fi
+
+        # 复制文件
+        cp -r "$tmp_dir/local-commander-main/"* "$SKILL_DIR/"
+        rm -rf "$tmp_dir"
+
+    else
+        # 交互模式：从本地复制
+        if [[ "$SCRIPT_DIR" != "$SKILL_DIR" ]]; then
+            print_info "复制文件到 $SKILL_DIR..."
+            cp -r "$SCRIPT_DIR/"* "$SKILL_DIR/"
+        fi
     fi
 
     # 添加执行权限
-    chmod +x "$SKILL_DIR/local-commander.py"
+    chmod +x "$SKILL_DIR/local-commander.py" 2>/dev/null || true
+    chmod +x "$SKILL_DIR/setup.sh" 2>/dev/null || true
 
     print_success "Skill 文件安装完成"
 }
