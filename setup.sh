@@ -351,8 +351,23 @@ print_completion() {
     echo ""
 }
 
+# 检测是否在交互模式
+is_interactive() {
+    [ -t 0 ] && [ -t 1 ]
+}
+
 # 交互式选择
 interactive_select() {
+    # 检测是否在管道模式（curl | bash）
+    if ! is_interactive; then
+        print_warning "检测到非交互模式，使用自动推荐配置"
+        print_info "如需自定义配置，请下载脚本后运行:"
+        print_info "  curl -fsSL https://raw.githubusercontent.com/mChenys/local-commander/main/setup.sh -o setup.sh"
+        print_info "  bash setup.sh"
+        echo ""
+        return
+    fi
+
     echo ""
     echo -e "${CYAN}请选择安装配置:${NC}"
     echo "  1) minimal   - 4b + coder (~12GB)    [内存 < 16GB]"
@@ -418,12 +433,17 @@ main() {
         interactive_select
     fi
 
-    # 确认安装
-    echo ""
-    read -p "开始安装? [Y/n]: " confirm
-    if [[ "$confirm" == "n" || "$confirm" == "N" ]]; then
-        echo "取消安装"
-        exit 0
+    # 确认安装（非交互模式自动确认）
+    if is_interactive; then
+        echo ""
+        read -p "开始安装? [Y/n]: " confirm
+        if [[ "$confirm" == "n" || "$confirm" == "N" ]]; then
+            echo "取消安装"
+            exit 0
+        fi
+    else
+        echo ""
+        print_info "开始安装..."
     fi
 
     # 安装依赖
