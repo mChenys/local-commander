@@ -43,12 +43,12 @@ get_model_size() {
 # 获取 GGUF 模型大小
 get_gguf_model_size() {
     case "$1" in
-        mini)     echo "0.8" ;;
-        fast)     echo "3" ;;
+        mini)     echo "3.5" ;;
+        fast)     echo "5.5" ;;
         coder)    echo "5" ;;
         coder_large) echo "9" ;;
-        reasoning) echo "5" ;;
-        vl)       echo "5" ;;
+        vl)       echo "5.5" ;;
+        minicpm_v) echo "5" ;;
         *)        echo "0" ;;
     esac
 }
@@ -65,14 +65,15 @@ get_model_id() {
 }
 
 # 获取 GGUF 模型信息
+# 格式: repo|gguf_file|mmproj_file (多模态模型需要 mmproj)
 get_gguf_model_info() {
     case "$1" in
-        mini)       echo "google/gemma-3-1b-it-qat-q4_0-gguf|gemma-3-1b-it-qat-q4_0.gguf" ;;
-        fast)       echo "unsloth/gemma-4-E4B-it-GGUF|gemma-4-E4B-it-Q4_K_M.gguf" ;;
+        mini)       echo "unsloth/gemma-4-E2B-it-GGUF|gemma-4-E2B-it-Q4_K_M.gguf|mmproj-gemma-4-E2B-it-f16.gguf" ;;
+        fast)       echo "unsloth/gemma-4-E4B-it-GGUF|gemma-4-E4B-it-Q4_K_M.gguf|mmproj-gemma-4-E4B-it-f16.gguf" ;;
         coder)      echo "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|qwen2.5-coder-7b-instruct-q4_k_m.gguf" ;;
         coder_large) echo "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF|qwen2.5-coder-14b-instruct-q4_k_m.gguf" ;;
-        reasoning)  echo "Qwen/Qwen2.5-7B-Instruct-GGUF|qwen2.5-7b-instruct-q4_k_m.gguf" ;;
-        vl)         echo "mobiuslabsgmbh/MiniCPM-V-2_6-gguf|MiniCPM-V-2_6-Q4_K_M.gguf|mmproj-model-f16.gguf" ;;
+        vl)         echo "unsloth/gemma-4-E4B-it-GGUF|gemma-4-E4B-it-Q4_K_M.gguf|mmproj-gemma-4-E4B-it-f16.gguf" ;;
+        minicpm_v)  echo "mobiuslabsgmbh/MiniCPM-V-2_6-gguf|MiniCPM-V-2_6-Q4_K_M.gguf|mmproj-model-f16.gguf" ;;
         *)          echo "" ;;
     esac
 }
@@ -203,21 +204,22 @@ recommend_config() {
 
     else
         # llama.cpp 配置 (Intel Mac / Linux)
+        # 使用 Gemma 4 多模态系列 - 文本+视觉一体
         if [[ $TOTAL_MEM_GB -lt 12 ]]; then
-            CONFIG="minimal"
+            CONFIG="mini"
             RECOMMENDED_MODELS="mini"
-            print_warning "内存较少 (${TOTAL_MEM_GB}GB)，推荐 minimal 配置"
+            print_warning "内存较少 (${TOTAL_MEM_GB}GB)，推荐 mini 配置"
         elif [[ $TOTAL_MEM_GB -lt 20 ]]; then
             CONFIG="balanced"
             RECOMMENDED_MODELS="mini fast coder"
             print_info "内存适中 (${TOTAL_MEM_GB}GB)，推荐 balanced 配置"
         elif [[ $TOTAL_MEM_GB -lt 32 ]]; then
             CONFIG="standard"
-            RECOMMENDED_MODELS="fast coder vl"
+            RECOMMENDED_MODELS="fast coder"
             print_info "内存充足 (${TOTAL_MEM_GB}GB)，推荐 standard 配置"
         else
             CONFIG="full"
-            RECOMMENDED_MODELS="fast coder coder_large vl"
+            RECOMMENDED_MODELS="mini fast coder coder_large"
             print_success "内存充裕 (${TOTAL_MEM_GB}GB)，推荐 full 配置"
         fi
 
@@ -517,28 +519,32 @@ create_backend_config() {
 }
 EOF
     else
-        # llama.cpp 配置
+        # llama.cpp 配置 - 使用 Gemma 4 多模态系列
         cat > "$config_file" << 'EOF'
 {
   "backend": "llamacpp",
   "models": {
     "mini": {
-      "hf_repo": "google/gemma-3-1b-it-qat-q4_0-gguf",
-      "gguf_file": "gemma-3-1b-it-qat-q4_0.gguf",
+      "hf_repo": "unsloth/gemma-4-E2B-it-GGUF",
+      "gguf_file": "gemma-4-E2B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-gemma-4-E2B-it-f16.gguf",
       "alias": "mini",
-      "memory_gb": 0.8,
-      "use_cases": ["快速对话", "简单问答"],
+      "memory_gb": 3.5,
+      "use_cases": ["快速对话", "简单问答", "图像分析"],
       "keywords": ["你好", "hello", "hi", "快速", "简单"],
-      "description": "Gemma 3 1B - 最小最快"
+      "description": "Gemma 4 E2B - 多模态 (文本+视觉)",
+      "is_multimodal": true
     },
     "fast": {
       "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
       "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
       "alias": "fast",
-      "memory_gb": 3,
-      "use_cases": ["快速对话", "简单代码", "通用任务"],
-      "keywords": ["快速", "对话", "简单"],
-      "description": "Gemma 4 E4B MoE - 小而强大"
+      "memory_gb": 5.5,
+      "use_cases": ["对话", "问答", "图像分析", "OCR"],
+      "keywords": ["快速", "对话", "分析"],
+      "description": "Gemma 4 E4B MoE - 多模态 (文本+视觉)",
+      "is_multimodal": true
     },
     "coder": {
       "hf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
@@ -546,7 +552,7 @@ EOF
       "alias": "coder",
       "memory_gb": 5,
       "use_cases": ["代码生成", "代码审查", "Bug诊断"],
-      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"],
+      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现"],
       "description": "Qwen2.5-Coder 7B - 代码专家"
     },
     "coder_large": {
@@ -554,22 +560,27 @@ EOF
       "gguf_file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
       "alias": "coder_large",
       "memory_gb": 9,
-      "use_cases": ["代码生成", "代码审查", "Bug诊断"],
-      "keywords": ["代码", "编程", "复杂"],
-      "description": "Qwen2.5-Coder 14B (需要 24GB+ 内存)"
+      "use_cases": ["代码生成", "代码审查"],
+      "keywords": ["代码", "复杂"],
+      "description": "Qwen2.5-Coder 14B (24GB+)"
     },
     "vl": {
-      "hf_repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
-      "gguf_file": "MiniCPM-V-2_6-Q4_K_M.gguf",
-      "mmproj_file": "mmproj-model-f16.gguf",
+      "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
+      "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
       "alias": "vl",
-      "memory_gb": 5,
+      "memory_gb": 5.5,
       "use_cases": ["图像分析", "UI验证", "OCR"],
-      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图"],
-      "description": "MiniCPM-V 2.6 - 视觉模型"
+      "keywords": ["图片", "截图", "图像", "UI"],
+      "description": "Gemma 4 E4B - 视觉",
+      "is_multimodal": true
     }
   },
-  "default_model": "fast"
+  "default_model": "fast",
+  "model_groups": {
+    "multimodal": ["mini", "fast", "vl"],
+    "code_models": ["coder", "coder_large"]
+  }
 }
 EOF
     fi
@@ -708,10 +719,10 @@ interactive_select() {
         echo "  3) standard  - 全部模型 (~34GB)       [内存 24-32GB]"
         echo "  4) full      - 全部模型 (~42GB)       [内存 > 32GB]"
     else
-        echo "  1) minimal   - mini (~1GB)             [内存 < 12GB]"
-        echo "  2) balanced  - mini + fast + coder (~9GB) [内存 12-20GB]"
-        echo "  3) standard  - fast + coder + vl (~13GB)  [内存 20-32GB]"
-        echo "  4) full      - 全部模型 (~22GB)           [内存 > 32GB]"
+        echo "  1) mini      - E2B 多模态 (~4GB)      [内存 < 12GB]"
+        echo "  2) balanced  - E2B + E4B + coder (~14GB) [内存 12-20GB]"
+        echo "  3) standard  - E4B + coder (~11GB)   [内存 20-32GB]"
+        echo "  4) full      - 全部模型 (~23GB)       [内存 > 32GB]"
     fi
 
     echo "  5) custom    - 自定义选择"
@@ -725,7 +736,7 @@ interactive_select() {
                 CONFIG="minimal"
                 RECOMMENDED_MODELS="4b coder"
             else
-                CONFIG="minimal"
+                CONFIG="mini"
                 RECOMMENDED_MODELS="mini"
             fi
             ;;
@@ -744,7 +755,7 @@ interactive_select() {
                 RECOMMENDED_MODELS="4b coder vl 35b"
             else
                 CONFIG="standard"
-                RECOMMENDED_MODELS="fast coder vl"
+                RECOMMENDED_MODELS="fast coder"
             fi
             ;;
         4)
@@ -753,7 +764,7 @@ interactive_select() {
                 RECOMMENDED_MODELS="4b coder vl 35b"
             else
                 CONFIG="full"
-                RECOMMENDED_MODELS="fast coder coder_large vl"
+                RECOMMENDED_MODELS="mini fast coder coder_large"
             fi
             ;;
         5)
@@ -765,12 +776,13 @@ interactive_select() {
                 echo "  - 35b (18GB): 复杂推理"
                 echo "  - 4b (3.5GB): 快速问答"
             else
-                echo "可用模型:"
-                echo "  - mini (0.8GB): Gemma 3 1B - 最小最快"
-                echo "  - fast (3GB): Gemma 4 E4B - 小而强大"
-                echo "  - coder (5GB): Qwen2.5-Coder 7B - 代码专家"
-                echo "  - coder_large (9GB): Qwen2.5-Coder 14B"
-                echo "  - vl (5GB): MiniCPM-V 2.6 - 视觉模型"
+                echo "可用模型 (Gemma 4 多模态系列):"
+                echo "  - mini (3.5GB): E2B - 文本+视觉 (快速)"
+                echo "  - fast (5.5GB): E4B - 文本+视觉 (推荐)"
+                echo "  - coder (5GB): Qwen-Coder 7B - 代码专用"
+                echo "  - coder_large (9GB): Qwen-Coder 14B"
+                echo ""
+                echo "💡 提示: mini/fast 都支持文本和图像，无需单独安装视觉模型"
             fi
             echo ""
             read -p "请输入要安装的模型 (空格分隔): " custom_models

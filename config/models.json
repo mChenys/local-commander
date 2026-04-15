@@ -3,23 +3,27 @@
   "models": {
     "mini": {
       "id": "",
-      "hf_repo": "google/gemma-3-1b-it-qat-q4_0-gguf",
-      "gguf_file": "gemma-3-1b-it-qat-q4_0.gguf",
+      "hf_repo": "unsloth/gemma-4-E2B-it-GGUF",
+      "gguf_file": "gemma-4-E2B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-gemma-4-E2B-it-f16.gguf",
       "alias": "mini",
-      "memory_gb": 0.8,
-      "use_cases": ["快速对话", "简单问答"],
+      "memory_gb": 3.5,
+      "use_cases": ["快速对话", "简单问答", "图像分析"],
       "keywords": ["你好", "hello", "hi", "快速", "简单"],
-      "description": "Gemma 3 1B - 最小最快"
+      "description": "Gemma 4 E2B - 多模态小模型 (文本+视觉)",
+      "is_multimodal": true
     },
     "fast": {
       "id": "",
       "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
       "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
       "alias": "fast",
-      "memory_gb": 3,
-      "use_cases": ["快速对话", "简单代码", "通用任务"],
-      "keywords": ["快速", "对话", "简单"],
-      "description": "Gemma 4 E4B MoE - 小而强大"
+      "memory_gb": 5.5,
+      "use_cases": ["对话", "问答", "图像分析", "OCR"],
+      "keywords": ["快速", "对话", "分析"],
+      "description": "Gemma 4 E4B MoE - 多模态模型 (文本+视觉)",
+      "is_multimodal": true
     },
     "coder": {
       "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
@@ -28,7 +32,8 @@
       "alias": "coder",
       "memory_gb": 5,
       "use_cases": ["代码生成", "代码审查", "Bug诊断"],
-      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"]
+      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"],
+      "is_multimodal": false
     },
     "coder_large": {
       "id": "",
@@ -38,26 +43,28 @@
       "memory_gb": 9,
       "use_cases": ["代码生成", "代码审查", "Bug诊断"],
       "keywords": ["代码", "编程", "复杂"],
-      "description": "Qwen2.5-Coder 14B (需要 24GB+ 内存)"
-    },
-    "reasoning": {
-      "id": "/Users/chenyousheng/.omlx/models/MLX-Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-4bit",
-      "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
-      "gguf_file": "qwen2.5-7b-instruct-q4_k_m.gguf",
-      "alias": "35b",
-      "memory_gb": 5,
-      "use_cases": ["复杂推理", "架构设计", "方案评估", "深度分析"],
-      "keywords": ["架构", "设计", "方案", "分析", "评估", "解释", "算法"]
+      "description": "Qwen2.5-Coder 14B (需要 24GB+ 内存)",
+      "is_multimodal": false
     },
     "vl": {
       "id": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
-      "hf_repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
-      "gguf_file": "MiniCPM-V-2_6-Q4_K_M.gguf",
-      "mmproj_file": "mmproj-model-f16.gguf",
+      "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
+      "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
       "alias": "vl",
-      "memory_gb": 5,
+      "memory_gb": 5.5,
       "use_cases": ["图像分析", "UI验证", "OCR", "截图分析"],
-      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"]
+      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"],
+      "description": "Gemma 4 E4B - 视觉模型 (兼容别名)",
+      "is_multimodal": true
+    },
+    "reasoning": {
+      "id": "/Users/chenyousheng/.omlx/models/MLX-Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-4bit",
+      "alias": "35b",
+      "memory_gb": 18,
+      "use_cases": ["复杂推理", "架构设计", "方案评估", "深度分析"],
+      "keywords": ["架构", "设计", "方案", "分析", "评估", "解释", "算法"],
+      "description": "Qwen3.5-35B MoE (仅 MLX)"
     },
     "local4b": {
       "id": "/Users/chenyousheng/.omlx/models/Qwen3-4B-Thinking-2507-GPT-5.1-Codex-Max-Distill-qx86-hi-mlx",
@@ -71,7 +78,7 @@
   "model_groups": {
     "fast_models": ["mini", "fast"],
     "code_models": ["coder", "coder_large"],
-    "reasoning_models": ["reasoning"]
+    "multimodal": ["mini", "fast", "vl"]
   },
   "backend_config": {
     "mlx": {

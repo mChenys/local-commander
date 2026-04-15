@@ -16,59 +16,63 @@ class LlamaCppBackend(Backend):
     """llama.cpp 模型后端 (跨平台)"""
 
     # GGUF 模型推荐映射
+    # 优先使用 Gemma 4 多模态系列 (文本+视觉一体)
     GGUF_MODEL_MAP = {
-        # 文本模型 - 小型 (适合 8-16GB 内存)
+        # Gemma 4 系列 - 多模态 (文本+图像+音频)
         "mini": {
-            "hf_repo": "google/gemma-3-1b-it-qat-q4_0-gguf",
-            "gguf_file": "gemma-3-1b-it-qat-q4_0.gguf",
-            "memory_gb": 0.8,
-            "use_cases": ["快速对话", "简单问答"],
-            "description": "Gemma 3 1B - 最小最快"
+            "hf_repo": "unsloth/gemma-4-E2B-it-GGUF",
+            "gguf_file": "gemma-4-E2B-it-Q4_K_M.gguf",
+            "mmproj_file": "mmproj-gemma-4-E2B-it-f16.gguf",
+            "memory_gb": 3.5,
+            "use_cases": ["快速对话", "简单问答", "图像分析"],
+            "description": "Gemma 4 E2B - 多模态小模型 (文本+视觉)",
+            "is_multimodal": True
         },
         "fast": {
             "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
             "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
-            "memory_gb": 3,
-            "use_cases": ["快速对话", "简单代码", "通用任务"],
-            "description": "Gemma 4 E4B MoE - 小而强大"
+            "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
+            "memory_gb": 5.5,
+            "use_cases": ["对话", "问答", "图像分析", "OCR"],
+            "description": "Gemma 4 E4B MoE - 多模态模型 (文本+视觉)",
+            "is_multimodal": True
         },
+        # 代码专用模型
         "coder": {
             "hf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
             "gguf_file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
             "memory_gb": 5,
             "use_cases": ["代码生成", "代码审查", "Bug诊断"],
-            "description": "Qwen2.5-Coder 7B - 代码专家"
+            "description": "Qwen2.5-Coder 7B - 代码专家",
+            "is_multimodal": False
         },
         "coder_large": {
             "hf_repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
             "gguf_file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
             "memory_gb": 9,
             "use_cases": ["代码生成", "代码审查", "Bug诊断"],
-            "description": "Qwen2.5-Coder 14B - 更强代码能力 (需要 24GB+ 内存)"
+            "description": "Qwen2.5-Coder 14B (需要 24GB+ 内存)",
+            "is_multimodal": False
         },
-        "reasoning": {
-            "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
-            "gguf_file": "qwen2.5-7b-instruct-q4_k_m.gguf",
-            "memory_gb": 5,
-            "use_cases": ["复杂推理", "架构设计"],
-            "description": "Qwen2.5 7B - 平衡性能"
-        },
-        # 视觉模型
+        # 兼容旧配置 - 使用 Gemma 4 替代
         "vl": {
+            "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
+            "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
+            "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
+            "memory_gb": 5.5,
+            "use_cases": ["图像分析", "UI验证", "OCR", "截图分析"],
+            "description": "Gemma 4 E4B - 视觉模型",
+            "is_multimodal": True
+        },
+        # MiniCPM-V 备用
+        "minicpm_v": {
             "hf_repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
             "gguf_file": "MiniCPM-V-2_6-Q4_K_M.gguf",
             "mmproj_file": "mmproj-model-f16.gguf",
             "memory_gb": 5,
-            "use_cases": ["图像分析", "UI验证", "OCR"],
-            "description": "MiniCPM-V 2.6 - 视觉模型"
-        },
-        "llava": {
-            "hf_repo": "cjpais/llava-v1.6-mistral-7b-GGUF",
-            "gguf_file": "llava-v1.6-mistral-7b.Q4_K_M.gguf",
-            "mmproj_file": "llava-v1.6-mistral-7b-mmproj-Q4_K_M.gguf",
-            "memory_gb": 5,
             "use_cases": ["图像分析", "视觉问答"],
-            "description": "LLaVA v1.6 - 视觉模型"
+            "description": "MiniCPM-V 2.6 - 备用视觉模型",
+            "is_multimodal": True
         }
     }
 
