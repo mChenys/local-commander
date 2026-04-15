@@ -129,8 +129,13 @@ def call_mlx_model(model_id: str, prompt: str, max_tokens: int = 4096, temp: flo
     """调用 MLX 模型"""
     import subprocess
 
-    # 构建 Qwen 格式的 prompt
-    full_prompt = f'<|im_start|>system\nYou are a helpful assistant. 回复要简洁专业。<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n'
+    # 根据模型类型选择 prompt 格式
+    if 'gemma' in model_id.lower():
+        # Gemma 格式
+        full_prompt = f'<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n'
+    else:
+        # Qwen 格式
+        full_prompt = f'<|im_start|>system\nYou are a helpful assistant. 回复要简洁专业。<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n'
 
     result = subprocess.run([
         'mlx_lm.generate',
@@ -206,8 +211,8 @@ def show_help():
   ─────────────────────────────────────────────────────────────────────
   coder   Qwen2.5-Coder-14B-4bit   代码生成、审查、Debug       8GB
   vl      Qwen2.5-VL-7B-4bit       图像分析、UI验证、OCR        5GB
-  27b     Qwen3.5-27B-4bit         复杂推理、架构设计           15GB
-  7b      Qwen2.5-7B-4bit          轻量对话、快速回答           4GB
+  35b     Qwen3.5-35B-MoE-4bit     复杂推理、架构设计、深度分析  18GB
+  4b      Qwen3-4B-GPT5-Distill    快速对话、简单代码、代码片段  3.5GB
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🚀 基本命令

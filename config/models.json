@@ -15,19 +15,28 @@
       "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"]
     },
     "reasoning": {
-      "id": "mlx-community/Qwen3.5-27B-4bit",
-      "alias": "27b",
-      "memory_gb": 15,
-      "use_cases": ["复杂推理", "架构设计", "方案评估", "分析"],
-      "keywords": ["架构", "设计", "方案", "分析", "评估", "解释"]
+      "id": "/Users/chenyousheng/.omlx/models/MLX-Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-4bit",
+      "alias": "35b",
+      "memory_gb": 18,
+      "use_cases": ["复杂推理", "架构设计", "方案评估", "深度分析", "算法实现"],
+      "keywords": ["架构", "设计", "方案", "分析", "评估", "解释", "算法", "优化", "思考"],
+      "features": ["thinking_mode", "moe", "claude_distilled"],
+      "description": "Qwen3.5-35B MoE Claude Opus 蒸馏版，最强推理模型"
     },
     "fast": {
-      "id": "mlx-community/Qwen2.5-7B-Instruct-4bit",
-      "alias": "7b",
-      "memory_gb": 4,
-      "use_cases": ["轻量对话", "快速回答"],
-      "keywords": ["你好", "您好", "hello", "hi", "谢谢", "快速", "简单"]
+      "id": "/Users/chenyousheng/.omlx/models/Qwen3-4B-Thinking-2507-GPT-5.1-Codex-Max-Distill-qx86-hi-mlx",
+      "alias": "4b",
+      "memory_gb": 3.5,
+      "use_cases": ["快速对话", "简单代码", "代码片段"],
+      "keywords": ["你好", "您好", "hello", "hi", "谢谢", "快速", "简单", "片段"],
+      "features": ["thinking_mode", "gpt5_distilled"],
+      "description": "Qwen3-4B GPT-5.1 Codex 蒸馏版，加载最快"
     }
   },
-  "default_model": "coder"
+  "default_model": "coder",
+  "model_groups": {
+    "fast_models": ["fast", "coder"],
+    "reasoning_models": ["reasoning"],
+    "code_models": ["coder", "reasoning"]
+  }
 }

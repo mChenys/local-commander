@@ -21,8 +21,8 @@ from enum import Enum
 class ModelType(Enum):
     CODER = "coder"       # Qwen2.5-Coder-14B - 代码生成、审查、Debug
     VL = "vl"             # Qwen2.5-VL-7B - 图像分析、UI验证、OCR
-    REASONING = "27b"     # Qwen3.5-27B - 复杂推理、架构设计
-    FAST = "7b"           # Qwen2.5-7B - 轻量对话、快速回答
+    REASONING = "35b"     # Qwen3.5-35B-MoE Claude Distilled - 复杂推理、架构设计
+    FAST = "4b"           # Qwen3-4B GPT-5.1 Distilled - 轻量对话、快速回答
     CLOUD = "cloud"       # 使用云端模型
 
 
@@ -53,7 +53,8 @@ class TaskClassifier:
         ModelType.REASONING: [
             "架构", "设计", "方案", "分析", "评估", "解释",
             "为什么", "怎么", "如何", "比较", "优劣",
-            "architecture", "design", "explain", "analyze"
+            "architecture", "design", "explain", "analyze",
+            "思考", "深度", "推理", "复杂"
         ],
         ModelType.FAST: [
             "你好", "hello", "hi", "谢谢", "快速", "简单",
@@ -182,8 +183,8 @@ class MCPRouterServer:
                         },
                         "model": {
                             "type": "string",
-                            "enum": ["coder", "vl", "27b", "7b"],
-                            "description": "指定模型类型: coder(代码), vl(图像), 27b(推理), 7b(快速)"
+                            "enum": ["coder", "vl", "35b", "4b"],
+                            "description": "指定模型类型: coder(代码), vl(图像), 35b(推理), 4b(快速)"
                         },
                         "has_image": {
                             "type": "boolean",
@@ -514,17 +515,22 @@ class MCPRouterServer:
             },
             {
                 "name": "native_window_elements",
-                "description": "获取原生窗口的 UI 元素树。用于定位按钮、文本框等可交互元素。",
+                "description": "获取原生窗口的 UI 元素。返回顶层 UI 元素列表（按钮、文本、工具栏等）。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "app_name": {
                             "type": "string",
-                            "description": "应用名称"
+                            "description": "应用名称（如 'Finder', 'WeChat', 'Google Chrome'）"
                         },
                         "window_title": {
                             "type": "string",
-                            "description": "窗口标题（可选）"
+                            "description": "窗口标题（可选，用于多窗口应用）"
+                        },
+                        "max_elements": {
+                            "type": "integer",
+                            "description": "最大元素数量（默认100）",
+                            "default": 100
                         }
                     },
                     "required": ["app_name"]
@@ -532,23 +538,45 @@ class MCPRouterServer:
             },
             {
                 "name": "native_window_action",
-                "description": "对原生窗口执行操作。支持点击、输入、获取文本等操作。",
+                "description": "对原生窗口执行操作。支持激活应用、点击、输入、按键、滚动等操作。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "app_name": {"type": "string", "description": "应用名称"},
                         "action": {
                             "type": "string",
-                            "enum": ["click", "input", "get_text", "press_key", "screenshot"],
-                            "description": "操作类型"
+                            "enum": ["activate", "click", "click_at", "input", "type_text", "press_key", "hotkey", "scroll", "get_text", "screenshot", "window_bounds"],
+                            "description": "操作类型: activate=激活应用, click=点击元素, click_at=点击坐标, input/type_text=输入文字, press_key=按键, hotkey=组合键, scroll=滚动, get_text=获取文本, screenshot=截图, window_bounds=获取窗口位置"
                         },
                         "element": {
                             "type": "string",
-                            "description": "元素标识（文本内容或 AXRole）"
+                            "description": "元素标识（文本内容或按钮名称）"
                         },
                         "value": {
                             "type": "string",
-                            "description": "输入值或按键（input/press_key 时使用）"
+                            "description": "输入值或按键"
+                        },
+                        "x": {
+                            "type": "integer",
+                            "description": "X 坐标（click_at 时使用）"
+                        },
+                        "y": {
+                            "type": "integer",
+                            "description": "Y 坐标（click_at 时使用）"
+                        },
+                        "direction": {
+                            "type": "string",
+                            "enum": ["up", "down", "left", "right"],
+                            "description": "滚动方向（scroll 时使用）"
+                        },
+                        "amount": {
+                            "type": "integer",
+                            "description": "滚动量或按键次数"
+                        },
+                        "modifiers": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "修饰键 (command, shift, control, option)"
                         }
                     },
                     "required": ["app_name", "action"]
@@ -2424,11 +2452,90 @@ const routes = {routes_json};
         """获取原生窗口的 UI 元素树"""
         app_name = args.get("app_name")
         window_title = args.get("window_title", "")
+        max_elements = args.get("max_elements", 100)
 
         try:
             import subprocess
 
-            # 使用 AppleScript 获取窗口元素
+            # 使用 UI elements 获取顶层元素（快速可靠）
+            script = f'''
+            tell application "System Events"
+                tell process "{app_name}"
+                    try
+                        set frontWindow to front window
+                        set allElements to UI elements of frontWindow
+                        set elementList to {{}}
+                        repeat with elem in allElements
+                            try
+                                set elemRole to role of elem
+                                set elemName to name of elem as string
+                                set elemValue to value of elem as string
+                                set end of elementList to elemRole & "||" & elemName & "||" & elemValue
+                            end try
+                        end repeat
+                        set output to ""
+                        repeat with itemStr in elementList
+                            set output to output & itemStr & "###"
+                        end repeat
+                        return output
+                    on error errMsg
+                        return "Error: " & errMsg
+                    end try
+                end tell
+            end tell
+            '''
+
+            proc = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if "Error:" in proc.stdout:
+                return {"success": False, "error": proc.stdout.split("Error:")[1].strip()}
+
+            # 解析元素
+            elements = []
+            raw_output = proc.stdout.strip()
+
+            if raw_output:
+                raw_elements = raw_output.split('###')
+
+                for elem in raw_elements[:max_elements]:
+                    if not elem.strip():
+                        continue
+                    parts = elem.strip().split('||')
+                    if len(parts) >= 1 and parts[0].strip():
+                        role = parts[0].strip()
+                        name = parts[1].strip() if len(parts) > 1 else ""
+                        value = parts[2].strip() if len(parts) > 2 else ""
+
+                        # 过滤掉 "missing value"
+                        name = "" if name == "missing value" else name
+                        value = "" if value == "missing value" else value
+
+                        elements.append({
+                            "role": role,
+                            "name": name,
+                            "value": value
+                        })
+
+            return {
+                "success": True,
+                "app_name": app_name,
+                "count": len(elements),
+                "elements": elements
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _native_window_elements_simple(self, app_name: str, window_title: str = "") -> dict:
+        """简化版：直接获取顶层 UI 元素"""
+        try:
+            import subprocess
+
             script = f'''
             tell application "System Events"
                 tell process "{app_name}"
@@ -2436,13 +2543,12 @@ const routes = {routes_json};
                         set frontWindow to front window
                         set elementList to {{}}
 
-                        repeat with theElement in entire contents of frontWindow
+                        repeat with theElement in UI elements of frontWindow
                             try
-                                set elemDesc to description of theElement
                                 set elemRole to role of theElement
                                 set elemName to name of theElement
                                 set elemValue to value of theElement
-                                set end of elementList to elemRole & "|" & elemName & "|" & elemDesc & "|" & elemValue
+                                set end of elementList to elemRole & "|" & elemName & "|" & elemValue
                             end try
                         end repeat
 
@@ -2464,25 +2570,28 @@ const routes = {routes_json};
             if "Error:" in proc.stdout:
                 return {"success": False, "error": proc.stdout.split("Error:")[1].strip()}
 
-            # 解析元素
             elements = []
-            raw_elements = proc.stdout.replace('{', '').replace('}', '').split(',')
+            raw_output = proc.stdout.strip()
+
+            if not raw_output:
+                return {"success": True, "app_name": app_name, "count": 0, "elements": []}
+
+            raw_elements = raw_output.replace('{', '').replace('}', '').split(',')
 
             for elem in raw_elements:
                 parts = elem.strip().split('|')
-                if len(parts) >= 2:
+                if len(parts) >= 1 and parts[0].strip():
                     elements.append({
                         "role": parts[0].strip() if len(parts) > 0 else "",
                         "name": parts[1].strip() if len(parts) > 1 else "",
-                        "description": parts[2].strip() if len(parts) > 2 else "",
-                        "value": parts[3].strip() if len(parts) > 3 else ""
+                        "value": parts[2].strip() if len(parts) > 2 else ""
                     })
 
             return {
                 "success": True,
                 "app_name": app_name,
                 "count": len(elements),
-                "elements": elements[:50]  # 限制返回数量
+                "elements": elements
             }
 
         except Exception as e:
@@ -2494,36 +2603,138 @@ const routes = {routes_json};
         action = args.get("action")
         element = args.get("element", "")
         value = args.get("value", "")
+        x = args.get("x", 0)
+        y = args.get("y", 0)
+        direction = args.get("direction", "down")
+        amount = args.get("amount", 1)
+        modifiers = args.get("modifiers", [])
 
         try:
             import subprocess
 
-            if action == "click":
+            if action == "activate":
+                # 激活应用（带到前台）
+                script = f'''
+                tell application "{app_name}"
+                    activate
+                end tell
+                return "Activated: {app_name}"
+                '''
+
+            elif action == "click":
+                # 点击指定名称的元素
                 script = f'''
                 tell application "System Events"
                     tell process "{app_name}"
                         try
                             click button "{element}" of front window
-                            return "Clicked: {element}"
+                            return "Clicked button: {element}"
                         on error
                             try
                                 click static text "{element}" of front window
                                 return "Clicked text: {element}"
-                            on error errMsg
-                                return "Error: " & errMsg
+                            on error
+                                try
+                                    click UI element "{element}" of front window
+                                    return "Clicked element: {element}"
+                                on error errMsg
+                                    return "Error: " & errMsg
+                                end try
                             end try
                         end try
                     end tell
                 end tell
                 '''
 
-            elif action == "input":
+            elif action == "click_at":
+                # 点击屏幕坐标
                 script = f'''
                 tell application "System Events"
                     tell process "{app_name}"
                         try
-                            keystroke "{value}"
-                            return "Typed: {value}"
+                            set frontWindow to front window
+                            set windowPos to position of frontWindow
+                            set winX to item 1 of windowPos
+                            set winY to item 2 of windowPos
+                            -- 点击相对窗口的坐标
+                            do shell script "cliclick c:" & (winX + {x}) & "," & (winY + {y})
+                            return "Clicked at: " & ({x}) & "," & ({y}) & " in window"
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+                # 如果没有 cliclick，使用替代方案
+                proc = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if "cliclick" in proc.stdout or proc.returncode != 0:
+                    # 使用 AppleScript 原生点击
+                    script = f'''
+                    tell application "System Events"
+                        tell process "{app_name}"
+                            try
+                                set frontWindow to front window
+                                set windowPos to position of frontWindow
+                                set winX to item 1 of windowPos
+                                set winY to item 2 of windowPos
+                            end try
+                        end tell
+                    end tell
+                    '''
+                    proc = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=10)
+                    # 解析窗口位置
+                    if proc.stdout:
+                        import re
+                        match = re.search(r'(\d+),\s*(\d+)', proc.stdout)
+                        if match:
+                            win_x, win_y = int(match.group(1)), int(match.group(2))
+                            # 使用 pyautogui 或直接坐标点击
+                            click_script = f'''
+                            use AppleScript version "2.5"
+                            use framework "Foundation"
+                            use framework "ApplicationServices"
+                            tell application "System Events"
+                                click at {{{win_x + x}, {win_y + y}}}
+                            end tell
+                            '''
+                            proc = subprocess.run(["osascript", "-e", click_script], capture_output=True, text=True, timeout=10)
+                            return {"success": True, "app_name": app_name, "action": action, "result": f"Clicked at ({win_x + x}, {win_y + y})"}
+
+                if "Error:" in proc.stdout:
+                    return {"success": False, "error": proc.stdout.split("Error:")[1].strip()}
+                return {"success": True, "app_name": app_name, "action": action, "result": proc.stdout.strip()}
+
+            elif action == "type_text":
+                # 输入文字（支持中文）
+                # 转义特殊字符
+                escaped_value = value.replace('\\', '\\\\').replace('"', '\\"')
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            keystroke "{escaped_value}"
+                            return "Typed text"
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "input":
+                # 别名：与 type_text 相同
+                escaped_value = value.replace('\\', '\\\\').replace('"', '\\"')
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            keystroke "{escaped_value}"
+                            return "Input: {escaped_value}"
                         on error errMsg
                             return "Error: " & errMsg
                         end try
@@ -2532,12 +2743,68 @@ const routes = {routes_json};
                 '''
 
             elif action == "press_key":
+                # 按键
+                key_map = {
+                    "enter": "key code 36",
+                    "return": "key code 36",
+                    "tab": "key code 48",
+                    "escape": "key code 53",
+                    "esc": "key code 53",
+                    "space": "key code 49",
+                    "delete": "key code 51",
+                    "backspace": "key code 51",
+                    "up": "key code 126",
+                    "down": "key code 125",
+                    "left": "key code 123",
+                    "right": "key code 124",
+                }
+
+                key_code = key_map.get(value.lower(), f'key code {value}')
                 script = f'''
                 tell application "System Events"
                     tell process "{app_name}"
                         try
-                            keystroke "{value}"
-                            return "Pressed: {value}"
+                            {key_code}
+                            return "Pressed key: {value}"
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "hotkey":
+                # 组合键
+                modifier_str = ", ".join([f"{m} down" for m in modifiers]) if modifiers else ""
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            keystroke "{value}" using {{{modifier_str}}}
+                            return "Pressed hotkey: {modifier_str} + {value}"
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "scroll":
+                # 滚动
+                scroll_map = {
+                    "up": "key code 126",
+                    "down": "key code 125",
+                    "left": "key code 123",
+                    "right": "key code 124"
+                }
+                key_code = scroll_map.get(direction, scroll_map["down"])
+                scroll_actions = "\n".join([key_code for _ in range(amount)])
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            {scroll_actions}
+                            return "Scrolled {direction} {amount} times"
                         on error errMsg
                             return "Error: " & errMsg
                         end try
@@ -2546,11 +2813,47 @@ const routes = {routes_json};
                 '''
 
             elif action == "get_text":
+                # 获取窗口内所有文本
                 script = f'''
                 tell application "System Events"
                     tell process "{app_name}"
                         try
-                            return value of static text 1 of front window
+                            set frontWindow to front window
+                            set allText to {{}}
+                            repeat with elem in entire contents of frontWindow
+                                try
+                                    set elemRole to role of elem
+                                    if elemRole is in {{"AXStaticText", "AXTextField", "AXTextArea"}} then
+                                        set elemValue to value of elem
+                                        if elemValue is not missing value and elemValue is not "" then
+                                            set end of allText to elemValue
+                                        end if
+                                    end if
+                                end try
+                            end repeat
+                            set AppleScript text item delimiters to "|||"
+                            return allText as string
+                        on error errMsg
+                            return "Error: " & errMsg
+                        end try
+                    end tell
+                end tell
+                '''
+
+            elif action == "window_bounds":
+                # 获取窗口位置和大小
+                script = f'''
+                tell application "System Events"
+                    tell process "{app_name}"
+                        try
+                            set frontWindow to front window
+                            set windowPos to position of frontWindow
+                            set windowSize to size of frontWindow
+                            set winX to item 1 of windowPos
+                            set winY to item 2 of windowPos
+                            set winW to item 1 of windowSize
+                            set winH to item 2 of windowSize
+                            return "x:" & winX & ",y:" & winY & ",width:" & winW & ",height:" & winH
                         on error errMsg
                             return "Error: " & errMsg
                         end try
@@ -2562,7 +2865,7 @@ const routes = {routes_json};
                 screenshot_path = f"/tmp/native-{app_name}.png"
                 script = f'''
                 do shell script "screencapture -x '{screenshot_path}'"
-                return "Screenshot saved to {screenshot_path}"
+                return "{screenshot_path}"
                 '''
 
             else:
@@ -2572,17 +2875,28 @@ const routes = {routes_json};
                 ["osascript", "-e", script],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
 
             if "Error:" in proc.stdout:
                 return {"success": False, "error": proc.stdout.split("Error:")[1].strip()}
 
+            result = proc.stdout.strip()
+
+            # 截图返回路径
+            if action == "screenshot" and result:
+                return {
+                    "success": True,
+                    "app_name": app_name,
+                    "action": action,
+                    "screenshot_path": result
+                }
+
             return {
                 "success": True,
                 "app_name": app_name,
                 "action": action,
-                "result": proc.stdout.strip()
+                "result": result
             }
 
         except Exception as e:
