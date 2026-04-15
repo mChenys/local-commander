@@ -403,85 +403,90 @@ install_dependencies() {
         echo ""
         echo -e "${CYAN}[1/2]${NC} 安装 llama.cpp..."
 
-        # macOS Intel - 优先使用预编译版本 (比 brew 快得多)
-        if [[ "$OS" == "Darwin" ]]; then
+        # 检查是否已安装（多种方式）
+        if command -v llama-cli &> /dev/null; then
+            print_success "llama.cpp 已安装 (PATH)，跳过"
+            HAS_LLAMACPP=true
+        elif [[ -x "$HOME/.local/bin/llama-cli" ]]; then
+            print_success "llama.cpp 已安装 (~/.local/bin)，跳过"
+            HAS_LLAMACPP=true
+        elif [[ -x "/usr/local/bin/llama-cli" ]]; then
+            print_success "llama.cpp 已安装 (brew)，跳过"
+            HAS_LLAMACPP=true
+        fi
+
+        # macOS Intel - 下载预编译版本
+        if [[ "$OS" == "Darwin" ]] && [[ "$HAS_LLAMACPP" != "true" ]]; then
             LLAMACPP_DIR="$HOME/.local/bin"
             LLAMACPP_BIN="$LLAMACPP_DIR/llama-cli"
 
-            # 检查是否已安装
-            if [[ -x "$LLAMACPP_BIN" ]]; then
-                print_success "llama.cpp 已存在，跳过安装"
-                HAS_LLAMACPP=true
-            else
-                echo -e "${CYAN}├──${NC} 下载预编译版本 (比 brew 编译快 20 倍)..."
+            echo -e "${CYAN}├──${NC} 下载预编译版本 (比 brew 编译快 20 倍)..."
 
-                # 获取最新版本号
-                LATEST_VERSION=$(curl -sI https://github.com/ggml-org/llama.cpp/releases/latest 2>/dev/null | grep -i "location:" | sed 's/.*tag\///' | tr -d '\r\n')
+            # 获取最新版本号（失败时使用默认版本）
+            LATEST_VERSION=$(curl -sI --connect-timeout 5 https://github.com/ggml-org/llama.cpp/releases/latest 2>/dev/null | grep -i "location:" | sed 's/.*tag\///' | tr -d '\r\n')
 
-                if [[ -z "$LATEST_VERSION" ]]; then
-                    LATEST_VERSION="b4848"
-                fi
+            if [[ -z "$LATEST_VERSION" ]]; then
+                LATEST_VERSION="b4848"
+            fi
 
-                echo -e "${CYAN}├──${NC} 版本: $LATEST_VERSION"
+            echo -e "${CYAN}├──${NC} 版本: $LATEST_VERSION"
+            echo -e "${CYAN}├──${NC} 下载中..."
 
-                # 创建目录
-                mkdir -p "$LLAMACPP_DIR"
+            # 创建目录
+            mkdir -p "$LLAMACPP_DIR"
 
-                # 下载预编译版本
-                TMP_ZIP="/tmp/llamacpp-$$.zip"
-                DOWNLOAD_URL="https://github.com/ggml-org/llama.cpp/releases/download/$LATEST_VERSION/llama-$LATEST_VERSION-macos-x64.zip"
+            # 下载预编译版本
+            TMP_ZIP="/tmp/llamacpp-$$.zip"
+            DOWNLOAD_URL="https://github.com/ggml-org/llama.cpp/releases/download/$LATEST_VERSION/llama-$LATEST_VERSION-macos-x64.zip"
 
-                if curl -L --progress-bar -o "$TMP_ZIP" "$DOWNLOAD_URL" 2>&1 | tail -1; then
-                    # 解压
-                    TMP_DIR="/tmp/llamacpp-$$"
-                    unzip -q "$TMP_ZIP" -d "$TMP_DIR" 2>/dev/null
+            # 下载并解压（使用 set -e 的子shell来处理错误）
+            if curl -L --connect-timeout 30 --progress-bar -o "$TMP_ZIP" "$DOWNLOAD_URL" 2>&1; then
+                # 解压
+                TMP_DIR="/tmp/llamacpp-$$"
+                unzip -q "$TMP_ZIP" -d "$TMP_DIR" 2>/dev/null || true
 
-                    # 移动可执行文件
-                    if [[ -d "$TMP_DIR/build/bin" ]]; then
-                        cp "$TMP_DIR/build/bin/"* "$LLAMACPP_DIR/" 2>/dev/null
-                    else
-                        # 新版结构
-                        find "$TMP_DIR" -name "llama-cli" -exec cp {} "$LLAMACPP_BIN" \; 2>/dev/null
-                        find "$TMP_DIR" -name "llama-server" -exec cp {} "$LLAMACPP_DIR/" \; 2>/dev/null
-                    fi
-
-                    chmod +x "$LLAMACPP_DIR/"* 2>/dev/null
-                    rm -rf "$TMP_ZIP" "$TMP_DIR"
-
-                    if [[ -x "$LLAMACPP_BIN" ]]; then
-                        print_success "llama.cpp 安装完成 (~30秒)"
-                        HAS_LLAMACPP=true
-                        # 添加到 PATH
-                        if [[ ":$PATH:" != *":$LLAMACPP_DIR:"* ]]; then
-                            echo "export PATH=\"\$PATH:$LLAMACPP_DIR\"" >> "$HOME/.zshrc" 2>/dev/null || true
-                        fi
-                    else
-                        print_warning "预编译版本下载失败，尝试 brew..."
-                    fi
+                # 移动可执行文件
+                if [[ -d "$TMP_DIR/build/bin" ]]; then
+                    cp "$TMP_DIR/build/bin/"* "$LLAMACPP_DIR/" 2>/dev/null || true
                 else
-                    print_warning "下载失败，尝试 brew 安装..."
+                    # 新版结构
+                    find "$TMP_DIR" -name "llama-cli" -exec cp {} "$LLAMACPP_BIN" \; 2>/dev/null || true
+                    find "$TMP_DIR" -name "llama-server" -exec cp {} "$LLAMACPP_DIR/" \; 2>/dev/null || true
                 fi
 
-                # 如果预编译版本失败，尝试 brew
-                if [[ "$HAS_LLAMACPP" != "true" ]] && command -v brew &> /dev/null; then
-                    echo -e "${YELLOW}├──${NC} 使用 brew 安装 (需要 10-20 分钟编译)..."
-                    brew install llama.cpp 2>&1 | while IFS= read -r line; do
-                        if [[ "$line" == *"Downloading"* ]] || [[ "$line" == *"Pouring"* ]] || [[ "$line" == *"Error"* ]]; then
-                            echo "  $line"
-                        fi
-                    done || true
+                chmod +x "$LLAMACPP_DIR/"* 2>/dev/null || true
+                rm -rf "$TMP_ZIP" "$TMP_DIR" 2>/dev/null || true
 
-                    if command -v llama-cli &> /dev/null; then
-                        print_success "llama.cpp 安装完成"
-                        HAS_LLAMACPP=true
+                if [[ -x "$LLAMACPP_BIN" ]]; then
+                    print_success "llama.cpp 安装完成 (~30秒)"
+                    HAS_LLAMACPP=true
+                    # 添加到 PATH
+                    if [[ ":$PATH:" != *":$LLAMACPP_DIR:"* ]]; then
+                        echo "export PATH=\"\$PATH:$LLAMACPP_DIR\"" >> "$HOME/.zshrc" 2>/dev/null || true
                     fi
                 fi
             fi
 
-            if [[ "$HAS_LLAMACPP" != "true" ]]; then
-                print_warning "llama.cpp 安装失败"
-                print_info "  请手动安装: brew install llama.cpp"
+            # 如果预编译版本失败，尝试 brew
+            if [[ "$HAS_LLAMACPP" != "true" ]] && command -v brew &> /dev/null; then
+                echo -e "${YELLOW}├──${NC} 预编译下载失败，使用 brew 安装..."
+                brew install llama.cpp 2>&1 | while IFS= read -r line; do
+                    if [[ "$line" == *"Downloading"* ]] || [[ "$line" == *"Pouring"* ]] || [[ "$line" == *"Error"* ]]; then
+                        echo "  $line"
+                    fi
+                done || true
+
+                if command -v llama-cli &> /dev/null; then
+                    print_success "llama.cpp 安装完成"
+                    HAS_LLAMACPP=true
+                fi
             fi
+        fi
+
+        # 最终检查
+        if [[ "$HAS_LLAMACPP" != "true" ]]; then
+            print_warning "llama.cpp 安装失败"
+            print_info "  请手动安装: brew install llama.cpp"
         fi
 
         # Linux
