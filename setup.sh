@@ -378,18 +378,23 @@ install_dependencies() {
         # Apple Silicon - 安装 MLX
         echo ""
         echo -e "${CYAN}[1/2]${NC} 安装 MLX 相关包..."
-        echo -e "${CYAN}├──${NC} mlx, mlx-lm, mlx-vlm"
 
-        start_spinner "安装中"
-        python3 -m pip install --user --break-system-packages \
-            mlx mlx-lm mlx-vlm \
-            sentence-transformers \
-            chromadb \
-            numpy \
-            pillow \
-            openai >/dev/null 2>&1 || true
-        stop_spinner
-        print_success "MLX 核心包安装完成"
+        # 检查是否已安装核心包
+        if python3 -c "import mlx, mlx_lm, mlx_vlm" 2>/dev/null; then
+            print_success "MLX 已安装，跳过"
+        else
+            echo -e "${CYAN}├──${NC} mlx, mlx-lm, mlx-vlm..."
+            start_spinner "安装中"
+            python3 -m pip install --user --break-system-packages \
+                mlx mlx-lm mlx-vlm \
+                sentence-transformers \
+                chromadb \
+                numpy \
+                pillow \
+                openai >/dev/null 2>&1 || true
+            stop_spinner
+            print_success "MLX 核心包安装完成"
+        fi
 
         HAS_MLX=true
 
@@ -489,18 +494,23 @@ install_dependencies() {
         # 安装基础 Python 依赖
         echo ""
         echo -e "${CYAN}[2/2]${NC} 安装 Python 依赖..."
-        echo -e "${CYAN}├──${NC} huggingface_hub, sentence-transformers, chromadb..."
 
-        start_spinner "安装中"
-        python3 -m pip install --user --break-system-packages \
-            huggingface_hub \
-            sentence-transformers \
-            chromadb \
-            numpy \
+        # 检查核心依赖
+        if python3 -c "import huggingface_hub, sentence_transformers, chromadb" 2>/dev/null; then
+            print_success "Python 依赖已安装，跳过"
+        else
+            echo -e "${CYAN}├──${NC} huggingface_hub, sentence-transformers, chromadb..."
+            start_spinner "安装中"
+            python3 -m pip install --user --break-system-packages \
+                huggingface_hub \
+                sentence-transformers \
+                chromadb \
+                numpy \
             pillow \
             openai >/dev/null 2>&1 || true
-        stop_spinner
-        print_success "Python 依赖安装完成"
+            stop_spinner
+            print_success "Python 依赖安装完成"
+        fi
     fi
 
     echo ""
