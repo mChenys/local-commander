@@ -1,61 +1,77 @@
 {
   "backend": "auto",
   "models": {
+    "mini": {
+      "id": "",
+      "hf_repo": "google/gemma-3-1b-it-qat-q4_0-gguf",
+      "gguf_file": "gemma-3-1b-it-qat-q4_0.gguf",
+      "alias": "mini",
+      "memory_gb": 0.8,
+      "use_cases": ["快速对话", "简单问答"],
+      "keywords": ["你好", "hello", "hi", "快速", "简单"],
+      "description": "Gemma 3 1B - 最小最快"
+    },
+    "fast": {
+      "id": "",
+      "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
+      "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
+      "alias": "fast",
+      "memory_gb": 3,
+      "use_cases": ["快速对话", "简单代码", "通用任务"],
+      "keywords": ["快速", "对话", "简单"],
+      "description": "Gemma 4 E4B MoE - 小而强大"
+    },
     "coder": {
       "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
+      "hf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
       "alias": "coder",
-      "memory_gb": 8,
-      "use_cases": ["代码生成", "代码审查", "Bug诊断", "重构"],
-      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"],
-      "gguf": {
-        "repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
-        "file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf"
-      }
-    },
-    "vl": {
-      "id": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
-      "alias": "vl",
       "memory_gb": 5,
-      "use_cases": ["图像分析", "UI验证", "OCR", "截图分析"],
-      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"],
-      "gguf": {
-        "repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
-        "file": "MiniCPM-V-2_6-Q4_K_M.gguf",
-        "mmproj": "mmproj-model-f16.gguf"
-      }
+      "use_cases": ["代码生成", "代码审查", "Bug诊断"],
+      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"]
+    },
+    "coder_large": {
+      "id": "",
+      "hf_repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
+      "alias": "coder_large",
+      "memory_gb": 9,
+      "use_cases": ["代码生成", "代码审查", "Bug诊断"],
+      "keywords": ["代码", "编程", "复杂"],
+      "description": "Qwen2.5-Coder 14B (需要 24GB+ 内存)"
     },
     "reasoning": {
       "id": "/Users/chenyousheng/.omlx/models/MLX-Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-4bit",
+      "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-7b-instruct-q4_k_m.gguf",
       "alias": "35b",
-      "memory_gb": 18,
-      "use_cases": ["复杂推理", "架构设计", "方案评估", "深度分析", "算法实现"],
-      "keywords": ["架构", "设计", "方案", "分析", "评估", "解释", "算法", "优化", "思考"],
-      "features": ["thinking_mode", "moe", "claude_distilled"],
-      "description": "Qwen3.5-35B MoE Claude Opus 蒸馏版，最强推理模型",
-      "gguf": {
-        "repo": "Qwen/Qwen2.5-14B-Instruct-GGUF",
-        "file": "qwen2.5-14b-instruct-q4_k_m.gguf"
-      }
+      "memory_gb": 5,
+      "use_cases": ["复杂推理", "架构设计", "方案评估", "深度分析"],
+      "keywords": ["架构", "设计", "方案", "分析", "评估", "解释", "算法"]
     },
-    "fast": {
+    "vl": {
+      "id": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
+      "hf_repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
+      "gguf_file": "MiniCPM-V-2_6-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-model-f16.gguf",
+      "alias": "vl",
+      "memory_gb": 5,
+      "use_cases": ["图像分析", "UI验证", "OCR", "截图分析"],
+      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图", "看"]
+    },
+    "local4b": {
       "id": "/Users/chenyousheng/.omlx/models/Qwen3-4B-Thinking-2507-GPT-5.1-Codex-Max-Distill-qx86-hi-mlx",
       "alias": "4b",
       "memory_gb": 3.5,
       "use_cases": ["快速对话", "简单代码", "代码片段"],
-      "keywords": ["你好", "您好", "hello", "hi", "谢谢", "快速", "简单", "片段"],
-      "features": ["thinking_mode", "gpt5_distilled"],
-      "description": "Qwen3-4B GPT-5.1 Codex 蒸馏版，加载最快",
-      "gguf": {
-        "repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
-        "file": "qwen2.5-7b-instruct-q4_k_m.gguf"
-      }
+      "keywords": ["你好", "您好", "hello", "hi", "谢谢", "快速", "简单", "片段"]
     }
   },
-  "default_model": "coder",
+  "default_model": "fast",
   "model_groups": {
-    "fast_models": ["fast", "coder"],
-    "reasoning_models": ["reasoning"],
-    "code_models": ["coder", "reasoning"]
+    "fast_models": ["mini", "fast"],
+    "code_models": ["coder", "coder_large"],
+    "reasoning_models": ["reasoning"]
   },
   "backend_config": {
     "mlx": {

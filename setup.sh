@@ -27,24 +27,7 @@ HAS_LLAMACPP=false
 BACKEND=""
 
 # GGUF 模型配置 (用于 Intel Mac)
-GGUF_MODELS="{
-  \"coder\": {
-    \"repo\": \"Qwen/Qwen2.5-Coder-14B-Instruct-GGUF\",
-    \"file\": \"qwen2.5-coder-14b-instruct-q4_k_m.gguf\",
-    \"size\": 9
-  },
-  \"fast\": {
-    \"repo\": \"Qwen/Qwen2.5-7B-Instruct-GGUF\",
-    \"file\": \"qwen2.5-7b-instruct-q4_k_m.gguf\",
-    \"size\": 5
-  },
-  \"vl\": {
-    \"repo\": \"mobiuslabsgmbh/MiniCPM-V-2_6-gguf\",
-    \"file\": \"MiniCPM-V-2_6-Q4_K_M.gguf\",
-    \"mmproj\": \"mmproj-model-f16.gguf\",
-    \"size\": 5
-  }
-}"
+# 小模型优先，适合低内存系统
 
 # 获取模型大小 (兼容 bash 3.x)
 get_model_size() {
@@ -60,10 +43,13 @@ get_model_size() {
 # 获取 GGUF 模型大小
 get_gguf_model_size() {
     case "$1" in
-        coder) echo "9" ;;
-        fast)  echo "5" ;;
-        vl)    echo "5" ;;
-        *)     echo "0" ;;
+        mini)     echo "0.8" ;;
+        fast)     echo "3" ;;
+        coder)    echo "5" ;;
+        coder_large) echo "9" ;;
+        reasoning) echo "5" ;;
+        vl)       echo "5" ;;
+        *)        echo "0" ;;
     esac
 }
 
@@ -81,10 +67,13 @@ get_model_id() {
 # 获取 GGUF 模型信息
 get_gguf_model_info() {
     case "$1" in
-        coder) echo "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF|qwen2.5-coder-14b-instruct-q4_k_m.gguf" ;;
-        fast)  echo "Qwen/Qwen2.5-7B-Instruct-GGUF|qwen2.5-7b-instruct-q4_k_m.gguf" ;;
-        vl)    echo "mobiuslabsgmbh/MiniCPM-V-2_6-gguf|MiniCPM-V-2_6-Q4_K_M.gguf|mmproj-model-f16.gguf" ;;
-        *)     echo "" ;;
+        mini)       echo "google/gemma-3-1b-it-qat-q4_0-gguf|gemma-3-1b-it-qat-q4_0.gguf" ;;
+        fast)       echo "unsloth/gemma-4-E4B-it-GGUF|gemma-4-E4B-it-Q4_K_M.gguf" ;;
+        coder)      echo "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|qwen2.5-coder-7b-instruct-q4_k_m.gguf" ;;
+        coder_large) echo "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF|qwen2.5-coder-14b-instruct-q4_k_m.gguf" ;;
+        reasoning)  echo "Qwen/Qwen2.5-7B-Instruct-GGUF|qwen2.5-7b-instruct-q4_k_m.gguf" ;;
+        vl)         echo "mobiuslabsgmbh/MiniCPM-V-2_6-gguf|MiniCPM-V-2_6-Q4_K_M.gguf|mmproj-model-f16.gguf" ;;
+        *)          echo "" ;;
     esac
 }
 
@@ -214,18 +203,22 @@ recommend_config() {
 
     else
         # llama.cpp 配置 (Intel Mac / Linux)
-        if [[ $TOTAL_MEM_GB -lt 16 ]]; then
+        if [[ $TOTAL_MEM_GB -lt 12 ]]; then
             CONFIG="minimal"
-            RECOMMENDED_MODELS="fast"
+            RECOMMENDED_MODELS="mini"
             print_warning "内存较少 (${TOTAL_MEM_GB}GB)，推荐 minimal 配置"
-        elif [[ $TOTAL_MEM_GB -lt 24 ]]; then
+        elif [[ $TOTAL_MEM_GB -lt 20 ]]; then
             CONFIG="balanced"
-            RECOMMENDED_MODELS="fast coder"
+            RECOMMENDED_MODELS="mini fast coder"
             print_info "内存适中 (${TOTAL_MEM_GB}GB)，推荐 balanced 配置"
-        else
+        elif [[ $TOTAL_MEM_GB -lt 32 ]]; then
             CONFIG="standard"
             RECOMMENDED_MODELS="fast coder vl"
             print_info "内存充足 (${TOTAL_MEM_GB}GB)，推荐 standard 配置"
+        else
+            CONFIG="full"
+            RECOMMENDED_MODELS="fast coder coder_large vl"
+            print_success "内存充裕 (${TOTAL_MEM_GB}GB)，推荐 full 配置"
         fi
 
         # 计算预计占用 (GGUF 模型)
@@ -529,21 +522,41 @@ EOF
 {
   "backend": "llamacpp",
   "models": {
-    "coder": {
-      "hf_repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
-      "gguf_file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
-      "alias": "coder",
-      "memory_gb": 9,
-      "use_cases": ["代码生成", "代码审查", "Bug诊断"],
-      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"]
+    "mini": {
+      "hf_repo": "google/gemma-3-1b-it-qat-q4_0-gguf",
+      "gguf_file": "gemma-3-1b-it-qat-q4_0.gguf",
+      "alias": "mini",
+      "memory_gb": 0.8,
+      "use_cases": ["快速对话", "简单问答"],
+      "keywords": ["你好", "hello", "hi", "快速", "简单"],
+      "description": "Gemma 3 1B - 最小最快"
     },
     "fast": {
-      "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
-      "gguf_file": "qwen2.5-7b-instruct-q4_k_m.gguf",
+      "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
+      "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
       "alias": "fast",
+      "memory_gb": 3,
+      "use_cases": ["快速对话", "简单代码", "通用任务"],
+      "keywords": ["快速", "对话", "简单"],
+      "description": "Gemma 4 E4B MoE - 小而强大"
+    },
+    "coder": {
+      "hf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+      "alias": "coder",
       "memory_gb": 5,
-      "use_cases": ["快速对话", "简单代码"],
-      "keywords": ["你好", "hello", "hi", "快速", "简单"]
+      "use_cases": ["代码生成", "代码审查", "Bug诊断"],
+      "keywords": ["代码", "编程", "Kotlin", "Swift", "函数", "类", "实现", "写", "生成"],
+      "description": "Qwen2.5-Coder 7B - 代码专家"
+    },
+    "coder_large": {
+      "hf_repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-coder-14b-instruct-q4_k_m.gguf",
+      "alias": "coder_large",
+      "memory_gb": 9,
+      "use_cases": ["代码生成", "代码审查", "Bug诊断"],
+      "keywords": ["代码", "编程", "复杂"],
+      "description": "Qwen2.5-Coder 14B (需要 24GB+ 内存)"
     },
     "vl": {
       "hf_repo": "mobiuslabsgmbh/MiniCPM-V-2_6-gguf",
@@ -552,10 +565,11 @@ EOF
       "alias": "vl",
       "memory_gb": 5,
       "use_cases": ["图像分析", "UI验证", "OCR"],
-      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图"]
+      "keywords": ["图片", "截图", "图像", "UI", "界面", "分析图"],
+      "description": "MiniCPM-V 2.6 - 视觉模型"
     }
   },
-  "default_model": "coder"
+  "default_model": "fast"
 }
 EOF
     fi
@@ -694,9 +708,10 @@ interactive_select() {
         echo "  3) standard  - 全部模型 (~34GB)       [内存 24-32GB]"
         echo "  4) full      - 全部模型 (~42GB)       [内存 > 32GB]"
     else
-        echo "  1) minimal   - fast (~5GB)           [内存 < 16GB]"
-        echo "  2) balanced  - fast + coder (~14GB)   [内存 16-24GB]"
-        echo "  3) standard  - fast + coder + vl (~19GB) [内存 > 24GB]"
+        echo "  1) minimal   - mini (~1GB)             [内存 < 12GB]"
+        echo "  2) balanced  - mini + fast + coder (~9GB) [内存 12-20GB]"
+        echo "  3) standard  - fast + coder + vl (~13GB)  [内存 20-32GB]"
+        echo "  4) full      - 全部模型 (~22GB)           [内存 > 32GB]"
     fi
 
     echo "  5) custom    - 自定义选择"
@@ -711,7 +726,7 @@ interactive_select() {
                 RECOMMENDED_MODELS="4b coder"
             else
                 CONFIG="minimal"
-                RECOMMENDED_MODELS="fast"
+                RECOMMENDED_MODELS="mini"
             fi
             ;;
         2)
@@ -720,7 +735,7 @@ interactive_select() {
                 RECOMMENDED_MODELS="4b coder vl"
             else
                 CONFIG="balanced"
-                RECOMMENDED_MODELS="fast coder"
+                RECOMMENDED_MODELS="mini fast coder"
             fi
             ;;
         3)
@@ -737,9 +752,8 @@ interactive_select() {
                 CONFIG="full"
                 RECOMMENDED_MODELS="4b coder vl 35b"
             else
-                print_warning "Intel Mac 不支持 full 配置"
-                CONFIG="standard"
-                RECOMMENDED_MODELS="fast coder vl"
+                CONFIG="full"
+                RECOMMENDED_MODELS="fast coder coder_large vl"
             fi
             ;;
         5)
@@ -752,9 +766,11 @@ interactive_select() {
                 echo "  - 4b (3.5GB): 快速问答"
             else
                 echo "可用模型:"
-                echo "  - coder (9GB): 代码生成"
-                echo "  - fast (5GB): 快速对话"
-                echo "  - vl (5GB): 图像分析"
+                echo "  - mini (0.8GB): Gemma 3 1B - 最小最快"
+                echo "  - fast (3GB): Gemma 4 E4B - 小而强大"
+                echo "  - coder (5GB): Qwen2.5-Coder 7B - 代码专家"
+                echo "  - coder_large (9GB): Qwen2.5-Coder 14B"
+                echo "  - vl (5GB): MiniCPM-V 2.6 - 视觉模型"
             fi
             echo ""
             read -p "请输入要安装的模型 (空格分隔): " custom_models
