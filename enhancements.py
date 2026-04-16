@@ -50,17 +50,23 @@ def list_available_models() -> List[str]:
                 if len(parts) >= 2:
                     model_name = "/".join(parts[:2])  # owner/model
 
-                    # 检查是否有 GGUF 文件
+                    # 检查模型目录下的 GGUF 文件（直接在目录下）
+                    gguf_files = list(model_dir.glob("*.gguf"))
+                    if gguf_files:
+                        for gguf in gguf_files:
+                            models.append(f"{model_name}:{gguf.name}")
+
+                    # 也检查 snapshots 子目录（某些下载方式）
                     snapshots_dir = model_dir / "snapshots"
                     if snapshots_dir.exists():
                         for snapshot in snapshots_dir.iterdir():
                             if snapshot.is_dir():
                                 gguf_files = list(snapshot.glob("*.gguf"))
                                 if gguf_files:
-                                    # 添加模型名称和 GGUF 文件名
                                     for gguf in gguf_files:
                                         models.append(f"{model_name}:{gguf.name}")
-                                    break
+
+    return list(set(models))  # 去重
 
     return list(set(models))  # 去重
 
