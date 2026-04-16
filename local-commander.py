@@ -164,16 +164,32 @@ def call_vl_model(model_id: str, image_path: str, prompt: str, max_tokens: int =
     backend_type = detect_backend()
     backend = get_backend()
 
-    # 确定视觉模型 - 通过路由器解析别名
+    # 确定视觉模型 - 根据后端选择合适的模型
     if ":" not in model_id and "/" not in model_id:
-        # 使用路由器解析别名为实际的模型 ID
         router = get_router()
-        model_info = router._get_model_by_alias(model_id if model_id else "vl")
-        model_id = model_info.get("id") or model_info.get("hf_repo", "vl")
 
-        # 如果 ID 为空，使用默认的视觉模型
-        if not model_id or model_id == "vl":
-            model_id = "mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
+        # 获取适用于当前后端的视觉模型
+        available_models = router.get_models_for_backend(backend_type)
+        vision_models = {
+            k: v for k, v in available_models.items()
+            if v.get("is_multimodal") or "vl" in k.lower()
+        }
+
+        if vision_models:
+            # 优先选择 mlx_vl 或第一个可用的视觉模型
+            if "mlx_vl" in vision_models and backend_type == "mlx":
+                model_info = vision_models["mlx_vl"]
+            elif "vl" in vision_models:
+                model_info = vision_models["vl"]
+            else:
+                model_info = list(vision_models.values())[0]
+            model_id = model_info.get("id") or model_info.get("hf_repo", "vl")
+        else:
+            # 后备方案：使用默认视觉模型
+            if backend_type == "mlx":
+                model_id = "mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
+            else:
+                model_id = "vl"  # GGUF 视觉模型
 
     success, output, metadata = backend.execute_vision(
         model_id=model_id,
