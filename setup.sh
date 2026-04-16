@@ -872,15 +872,14 @@ configure_mcp() {
         # 先删除旧配置（如果存在）
         claude mcp remove local-commander-router 2>/dev/null || true
 
-        # 添加 MCP 服务器 (正确语法: claude mcp add -e KEY=value <name> -- <command> <args>)
-        claude mcp add \
+        # 添加 MCP 服务器
+        # 正确语法: claude mcp add -e KEY=value <name> -- <command> <args>
+        if claude mcp add \
             -e "LOCAL_COMMANDER_PATH=$SKILL_DIR" \
             -e "LOCAL_COMMANDER_BACKEND=$BACKEND" \
-            local-commander-router \
-            -- python3 "$SKILL_DIR/lib/mcp_router.py" 2>/dev/null
-
-        if [[ $? -eq 0 ]]; then
+            -- local-commander-router python3 "$SKILL_DIR/lib/mcp_router.py" 2>&1; then
             print_success "MCP 服务器添加成功"
+            print_info "重启 Claude Code 使配置生效"
         else
             print_warning "claude mcp add 命令失败，尝试手动配置"
             configure_mcp_manual
