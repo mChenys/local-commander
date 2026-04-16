@@ -137,7 +137,7 @@ def call_local_model(model_id: str, prompt: str, max_tokens: int = 4096, temp: f
         # 格式: owner/model:file.gguf -> 提取文件名作为模型别名
         pass
 
-    success, output, metadata = backend.execute_text(
+    success, output, metadata = backend.execute(
         model_id=model_id,
         prompt=prompt,
         max_tokens=max_tokens,
