@@ -948,10 +948,10 @@ print_completion() {
     echo "1. 重启 Claude Code 使 MCP 配置生效"
     echo ""
     echo "2. 测试安装:"
-    echo "   ${BLUE}python3 ~/.claude/skills/local-commander/local-commander.py --validate${NC}"
+    echo -e "   ${BLUE}python3 ~/.claude/skills/local-commander/local-commander.py --validate${NC}"
     echo ""
     echo "3. 使用方式:"
-    echo "   ${BLUE}/local 写一个 Python 函数${NC}"
+    echo -e "   ${BLUE}/local 写一个 Python 函数${NC}"
 
     if [[ "$BACKEND" == "llamacpp" ]]; then
         echo ""
@@ -963,7 +963,7 @@ print_completion() {
 
     echo ""
     echo -e "${YELLOW}自定义模型配置:${NC}"
-    echo "   编辑 ${BLUE}~/.claude/skills/local-commander/config/models.json${NC}"
+    echo -e "   编辑 ${BLUE}~/.claude/skills/local-commander/config/models.json${NC}"
 }
 
 # 检测是否在交互模式

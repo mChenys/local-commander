@@ -24,23 +24,45 @@ def get_system_info() -> Dict[str, Any]:
 
 
 def list_available_models() -> List[str]:
-    """列出可用的本地模型"""
-    models_dir = Path.home() / ".mlx/models"
-    if models_dir.exists():
-        return [d.name for d in models_dir.iterdir() if d.is_dir()]
-    else:
-        # 尝试其他常见的模型目录
-        alt_dirs = [
-            Path("/opt/mlx/models"),
-            Path("./models"),
-            Path("~/mlx_models").expanduser()
-        ]
+    """列出可用的本地模型（支持 MLX 和 GGUF）"""
+    models = []
 
-        for models_dir in alt_dirs:
-            if models_dir.exists():
-                return [d.name for d in models_dir.iterdir() if d.is_dir()]
+    # 1. 检查 MLX 模型目录
+    mlx_dirs = [
+        Path.home() / ".mlx/models",
+        Path("/opt/mlx/models"),
+        Path("./models"),
+        Path("~/mlx_models").expanduser()
+    ]
 
-    return []
+    for models_dir in mlx_dirs:
+        if models_dir.exists():
+            models.extend([d.name for d in models_dir.iterdir() if d.is_dir()])
+
+    # 2. 检查 GGUF 模型（Hugging Face 缓存）
+    hf_cache = Path.home() / ".cache/huggingface/hub"
+    if hf_cache.exists():
+        for model_dir in hf_cache.iterdir():
+            if model_dir.is_dir() and model_dir.name.startswith("models--"):
+                # 解析模型名称
+                # 格式: models--owner--model--variant 或 models--owner--model
+                parts = model_dir.name.replace("models--", "").split("--")
+                if len(parts) >= 2:
+                    model_name = "/".join(parts[:2])  # owner/model
+
+                    # 检查是否有 GGUF 文件
+                    snapshots_dir = model_dir / "snapshots"
+                    if snapshots_dir.exists():
+                        for snapshot in snapshots_dir.iterdir():
+                            if snapshot.is_dir():
+                                gguf_files = list(snapshot.glob("*.gguf"))
+                                if gguf_files:
+                                    # 添加模型名称和 GGUF 文件名
+                                    for gguf in gguf_files:
+                                        models.append(f"{model_name}:{gguf.name}")
+                                    break
+
+    return list(set(models))  # 去重
 
 
 def benchmark_model(model_id: str, test_prompt: str = "你好") -> Dict[str, Any]:
