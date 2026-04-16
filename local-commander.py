@@ -159,15 +159,21 @@ def call_mlx_model(model_id: str, prompt: str, max_tokens: int = 4096, temp: flo
 def call_vl_model(model_id: str, image_path: str, prompt: str, max_tokens: int = 4096) -> str:
     """调用视觉模型（自动选择后端）"""
     from lib.backends import detect_backend, get_backend
+    from lib.router import get_router
 
     backend_type = detect_backend()
     backend = get_backend()
 
-    # 确定视觉模型
-    # 如果 model_id 不包含视觉模型信息，使用默认的
-    if ":" not in model_id:
-        # 尝试从配置获取视觉模型
-        model_id = "vl"  # 使用别名
+    # 确定视觉模型 - 通过路由器解析别名
+    if ":" not in model_id and "/" not in model_id:
+        # 使用路由器解析别名为实际的模型 ID
+        router = get_router()
+        model_info = router._get_model_by_alias(model_id if model_id else "vl")
+        model_id = model_info.get("id") or model_info.get("hf_repo", "vl")
+
+        # 如果 ID 为空，使用默认的视觉模型
+        if not model_id or model_id == "vl":
+            model_id = "mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
 
     success, output, metadata = backend.execute_vision(
         model_id=model_id,

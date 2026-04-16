@@ -22,7 +22,7 @@ class LlamaCppBackend(Backend):
         "mini": {
             "hf_repo": "unsloth/gemma-4-E2B-it-GGUF",
             "gguf_file": "gemma-4-E2B-it-Q4_K_M.gguf",
-            "mmproj_file": "mmproj-gemma-4-E2B-it-f16.gguf",
+            "mmproj_file": "mmproj-BF16.gguf",  # 通用 mmproj
             "memory_gb": 3.5,
             "use_cases": ["快速对话", "简单问答", "图像分析"],
             "description": "Gemma 4 E2B - 多模态小模型 (文本+视觉)",
@@ -31,7 +31,7 @@ class LlamaCppBackend(Backend):
         "fast": {
             "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
             "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
-            "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
+            "mmproj_file": "mmproj-BF16.gguf",  # 通用 mmproj
             "memory_gb": 5.5,
             "use_cases": ["对话", "问答", "图像分析", "OCR"],
             "description": "Gemma 4 E4B MoE - 多模态模型 (文本+视觉)",
@@ -220,15 +220,20 @@ class LlamaCppBackend(Backend):
             if not model_path:
                 return False, f"模型不存在: {model_id}", {"backend": "llamacpp"}
 
+        # 检测是否支持 Metal GPU (macOS)
+        import platform
+        use_gpu = platform.system() == "Darwin"
+        gpu_layers = "99" if use_gpu else "0"  # Apple Silicon 使用全部 GPU layers
+
         cmd = [
             self._llama_cli,
             "-m", model_path,
             "-p", formatted_prompt,
             "-n", str(max_tokens),
             "--temp", str(temperature),
-            "-ngl", "0",  # 不使用 GPU layers (CPU 模式)
+            "-ngl", gpu_layers,  # GPU layers (Metal 加速)
             "-c", "4096",  # 上下文长度
-            "--no-display-prompt",  # 不显示输入提示
+            "--single-turn",  # 单次执行后退出，不进入交互模式
             "-r", "<|im_end|>",  # 停止词
             "-r", "<|eot_id|>",
             "-r", "</s>",
@@ -270,43 +275,54 @@ class LlamaCppBackend(Backend):
         **kwargs
     ) -> Tuple[bool, str, Dict[str, Any]]:
         """使用 llama-cli 执行视觉模型 (llava/minicpm-v)"""
-        # 获取模型路径
+        # 获取模型路径和 mmproj
         model_path = model_id
         mmproj_path = None
+        model_info = None
 
+        # 检查是否是模型键名
         if not Path(model_id).exists():
-            # 可能是模型键名 (vl 或 llava)
             model_info = self.GGUF_MODEL_MAP.get(model_id)
-            if not model_info:
-                # 尝试其他视觉模型
-                for key in ["vl", "llava"]:
-                    path = self._get_model_path(key)
-                    if path:
-                        model_path = path
-                        model_info = self.GGUF_MODEL_MAP[key]
+            if model_info:
+                model_path = self._get_model_path(model_id)
+        else:
+            # 尝试从路径推断模型信息
+            for key, info in self.GGUF_MODEL_MAP.items():
+                if info.get("is_multimodal"):
+                    potential_path = self._get_model_path(key)
+                    if potential_path == model_id or (potential_path and Path(potential_path).name in model_id):
+                        model_info = info
                         break
 
-            if model_info:
-                # 获取 mmproj 文件
-                mmproj_file = model_info.get("mmproj_file")
-                if mmproj_file:
-                    hf_repo = model_info["hf_repo"]
-                    cache_name = hf_repo.replace("/", "--")
-                    cache_path = self._hf_cache / f"models--{cache_name}"
-                    if cache_path.exists():
-                        snapshots_dir = cache_path / "snapshots"
-                        if snapshots_dir.exists():
-                            for snapshot in snapshots_dir.iterdir():
-                                mmproj_candidate = snapshot / mmproj_file
-                                if mmproj_candidate.exists():
-                                    mmproj_path = str(mmproj_candidate)
-                                    break
+        # 如果没有找到模型信息，使用默认的 Gemma 4 E4B
+        if not model_info:
+            model_info = self.GGUF_MODEL_MAP.get("fast")  # Gemma 4 E4B
+
+        # 获取 mmproj 文件
+        if model_info and model_info.get("mmproj_file"):
+            hf_repo = model_info["hf_repo"]
+            mmproj_file = model_info["mmproj_file"]
+            cache_name = hf_repo.replace("/", "--")
+            cache_path = self._hf_cache / f"models--{cache_name}"
+            if cache_path.exists():
+                snapshots_dir = cache_path / "snapshots"
+                if snapshots_dir.exists():
+                    for snapshot in snapshots_dir.iterdir():
+                        mmproj_candidate = snapshot / mmproj_file
+                        if mmproj_candidate.exists():
+                            mmproj_path = str(mmproj_candidate)
+                            break
 
         if not model_path or not Path(model_path).exists():
             return False, f"视觉模型不存在: {model_id}", {"backend": "llamacpp"}
 
         if not mmproj_path:
             return False, f"mmproj 文件不存在，无法进行视觉推理", {"backend": "llamacpp"}
+
+        # 检测是否支持 Metal GPU (macOS)
+        import platform
+        use_gpu = platform.system() == "Darwin"
+        gpu_layers = "99" if use_gpu else "0"  # Apple Silicon 使用全部 GPU layers
 
         cmd = [
             self._llama_cli,
@@ -316,7 +332,7 @@ class LlamaCppBackend(Backend):
             "-p", prompt,
             "-n", str(max_tokens),
             "--temp", "0.1",
-            "-ngl", "0",
+            "-ngl", gpu_layers,  # GPU layers (Metal 加速)
             "-c", "4096",
         ]
 
@@ -350,11 +366,9 @@ class LlamaCppBackend(Backend):
 
     def _parse_llama_output(self, raw: str) -> str:
         """解析 llama-cli 输出"""
-        # llama-cli 输出通常直接是生成的内容
         lines = raw.strip().split("\n")
 
-        # 过滤掉一些日志信息
-        content_lines = []
+        # 过滤掉日志和启动信息
         skip_patterns = [
             "llama_model_loader:",
             "llama_init_from_model:",
@@ -362,19 +376,53 @@ class LlamaCppBackend(Backend):
             "llama_new_context_with_model:",
             "llama_kv_cache",
             "llama_print_timings:",
+            "llama_memory_breakdown",
+            "ggml_metal",
+            "load_backend:",
             "system_info:",
             "load_image",
             "eval: ",
             "generate:",
+            "build      :",
+            "model      :",
+            "modalities :",
+            "available commands:",
+            "/exit",
+            "/regen",
+            "/clear",
+            "/read",
+            "/glob",
+            "Exiting...",
+            "[ Prompt:",
+            "[Start thinking]",
+            "Thinking Process:",
+            "| Generation:",
+            "▄▄ ▄▄",
+            "██ ██",
+            "▀▀█▄",
+            "████",
+            "██",
+            "▀▀",
         ]
 
+        content_lines = []
+        in_content = False
+
         for line in lines:
+            # 跳过空行和模式匹配的行
             skip = False
+            stripped = line.strip()
+
             for pattern in skip_patterns:
-                if line.strip().startswith(pattern):
+                if pattern in stripped or stripped.startswith(pattern):
                     skip = True
                     break
-            if not skip and line.strip():
+
+            # 跳过 ASCII art banner 行 (包含特殊字符)
+            if stripped and all(c in "▄██▀█░" for c in stripped if c != " "):
+                skip = True
+
+            if not skip and stripped:
                 content_lines.append(line)
 
         return "\n".join(content_lines).strip()

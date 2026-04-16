@@ -24,8 +24,14 @@ def detect_backend() -> str:
         "mlx" - Apple Silicon Mac
         "llamacpp" - Intel Mac / Linux / 其他
     """
+    import os
     import platform
     import shutil
+
+    # 支持通过环境变量强制指定后端 (用于测试)
+    force_backend = os.environ.get("LOCAL_COMMANDER_BACKEND", "").lower()
+    if force_backend in ("mlx", "llamacpp"):
+        return force_backend
 
     system = platform.system()
     machine = platform.machine()
