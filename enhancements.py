@@ -68,8 +68,6 @@ def list_available_models() -> List[str]:
 
     return list(set(models))  # 去重
 
-    return list(set(models))  # 去重
-
 
 def benchmark_model(model_id: str, test_prompt: str = "你好") -> Dict[str, Any]:
     """对模型进行基准测试"""
