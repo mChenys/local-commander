@@ -865,6 +865,34 @@ EOF
 configure_mcp() {
     print_section "配置 MCP 服务"
 
+    # 使用 claude mcp add 命令添加 MCP 服务器
+    if command -v claude &> /dev/null; then
+        print_info "使用 claude mcp add 命令配置..."
+
+        # 先删除旧配置（如果存在）
+        claude mcp remove local-commander-router 2>/dev/null || true
+
+        # 添加 MCP 服务器
+        claude mcp add local-commander-router \
+            --command python3 \
+            --args "$SKILL_DIR/lib/mcp_router.py" \
+            --env LOCAL_COMMANDER_PATH="$SKILL_DIR" \
+            --env LOCAL_COMMANDER_BACKEND="$BACKEND" 2>/dev/null
+
+        if [[ $? -eq 0 ]]; then
+            print_success "MCP 服务器添加成功"
+        else
+            print_warning "claude mcp add 命令失败，尝试手动配置"
+            configure_mcp_manual
+        fi
+    else
+        print_warning "未找到 claude 命令，使用手动配置"
+        configure_mcp_manual
+    fi
+}
+
+# 手动配置 MCP (备用方案)
+configure_mcp_manual() {
     local mcp_file="$HOME/.claude/.mcp.json"
     local mcp_config=$(cat <<EOF
 {
