@@ -7,8 +7,10 @@
 ## 目录
 
 - [功能概览](#功能概览)
+- [平台支持](#平台支持)
 - [快速开始](#快速开始)
   - [一键安装](#一键安装)
+  - [手动配置 MCP](#手动配置-mcp)
   - [验证安装](#验证安装)
   - [基本使用](#基本使用)
 - [核心功能](#核心功能)
@@ -40,7 +42,18 @@
 | 🧠 **复杂推理** | 35B MoE 模型 | 架构设计、深度分析 |
 | 🔄 **代码审查** | 生成→审查→修复 | 自动化质量保证 |
 
+### 平台支持
+
+| 平台 | 后端 | 模型格式 | GPU 加速 |
+|------|------|----------|----------|
+| Apple Silicon Mac | MLX | MLX 4-bit | Metal ✅ |
+| Intel Mac | llama.cpp | GGUF | Metal ✅ |
+| Linux (NVIDIA) | llama.cpp | GGUF | CUDA ✅ |
+| Linux (CPU) | llama.cpp | GGUF | - |
+
 ### 模型矩阵
+
+**Apple Silicon (MLX)**：
 
 | 模型 | 别名 | 大小 | 专长 |
 |------|------|------|------|
@@ -48,6 +61,14 @@
 | Qwen2.5-VL-7B | `vl` | 5GB | 图像分析、UI验证、OCR |
 | Qwen3.5-35B MoE | `35b` | 18GB | 复杂推理、架构设计 |
 | Qwen3-4B | `4b` | 3.5GB | 快速问答、简单代码 |
+
+**Intel Mac / Linux (llama.cpp GGUF)**：
+
+| 模型 | 别名 | 大小 | 专长 |
+|------|------|------|------|
+| Gemma-4-E2B | `mini` | 3.5GB | 快速对话、图像分析 (多模态) |
+| Gemma-4-E4B | `fast` | 5.5GB | 对话、图像分析、OCR (多模态) |
+| Qwen2.5-Coder-7B | `coder` | 5GB | 代码生成、审查 |
 
 ### 自动化测试
 
@@ -75,18 +96,47 @@ cd local-commander && ./setup.sh
 安装脚本会自动：
 1. 检测系统配置（OS、内存、GPU）
 2. 推荐最佳模型组合
-3. 安装 Python 依赖
+3. 安装 Python 依赖和 llama.cpp（Intel Mac）
 4. 下载推荐模型
 5. 配置 MCP 服务
 
 **配置级别**：
+
+**Apple Silicon (MLX)**：
 
 | 级别 | 模型组合 | 内存占用 | 适用场景 |
 |------|---------|---------|---------|
 | `minimal` | 4b + coder | ~12GB | 内存有限 |
 | `balanced` | 4b + coder + vl | ~16GB | 日常开发 |
 | `standard` | 全部模型 | ~34GB | 全功能使用 |
-| `full` | 全部模型 | ~42GB | 内存充裕 |
+
+**Intel Mac (llama.cpp GGUF)**：
+
+| 级别 | 模型组合 | 内存占用 | 适用场景 |
+|------|---------|---------|---------|
+| `mini` | E2B 多模态 | ~4GB | 内存有限 |
+| `balanced` | E2B + E4B + coder | ~14GB | 日常开发 |
+| `standard` | E4B + coder | ~11GB | 内存充足 |
+
+### 手动配置 MCP
+
+如果安装脚本没有成功配置 MCP，请手动执行：
+
+```bash
+# 删除旧配置（如果存在）
+claude mcp remove local-commander-router 2>/dev/null
+
+# 添加 MCP 服务器
+claude mcp add \
+  -e "LOCAL_COMMANDER_PATH=$HOME/.claude/skills/local-commander" \
+  -e "LOCAL_COMMANDER_BACKEND=llamacpp" \
+  -- local-commander-router python3 "$HOME/.claude/skills/local-commander/lib/mcp_router.py"
+
+# 验证配置
+claude mcp list
+```
+
+> **注意**：Intel Mac 使用 `llamacpp`，Apple Silicon 使用 `mlx`（或省略，自动检测）
 
 ### 验证安装
 
@@ -99,6 +149,18 @@ python3 ~/.claude/skills/local-commander/local-commander.py --models
 
 # 测试知识库
 python3 ~/.claude/skills/local-commander/local-commander.py --kb-stats
+```
+
+### 强制指定后端
+
+可以通过环境变量强制指定后端（用于测试）：
+
+```bash
+# 强制使用 llama.cpp 后端
+LOCAL_COMMANDER_BACKEND=llamacpp python3 ~/.claude/skills/local-commander/local-commander.py "你好"
+
+# 强制使用 MLX 后端
+LOCAL_COMMANDER_BACKEND=mlx python3 ~/.claude/skills/local-commander/local-commander.py "你好"
 ```
 
 ### 基本使用
@@ -487,8 +549,11 @@ coords = mcp__local-commander-router__vl_get_click_coords({
 
 配置文件：`~/.claude/skills/local-commander/config/models.json`
 
+**Apple Silicon (MLX)**：
+
 ```json
 {
+  "backend": "mlx",
   "models": {
     "coder": {
       "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
@@ -503,28 +568,42 @@ coords = mcp__local-commander-router__vl_get_click_coords({
       "memory_gb": 5,
       "use_cases": ["图像分析", "UI验证", "OCR"],
       "keywords": ["图片", "截图", "图像", "UI", "分析图"]
-    },
-    "reasoning": {
-      "id": "/path/to/your/35b-model",
-      "alias": "35b",
-      "memory_gb": 18,
-      "use_cases": ["复杂推理", "架构设计"],
-      "keywords": ["架构", "设计", "方案", "分析"]
-    },
-    "fast": {
-      "id": "/path/to/your/4b-model",
-      "alias": "4b",
-      "memory_gb": 3.5,
-      "use_cases": ["快速对话", "简单代码"],
-      "keywords": ["你好", "hello", "快速", "简单"]
     }
   },
-  "default_model": "coder",
-  "model_groups": {
-    "fast_models": ["fast", "coder"],
-    "reasoning_models": ["reasoning"],
-    "code_models": ["coder", "reasoning"]
-  }
+  "default_model": "coder"
+}
+```
+
+**Intel Mac (llama.cpp GGUF)**：
+
+```json
+{
+  "backend": "llamacpp",
+  "models": {
+    "mini": {
+      "hf_repo": "unsloth/gemma-4-E2B-it-GGUF",
+      "gguf_file": "gemma-4-E2B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-BF16.gguf",
+      "alias": "mini",
+      "memory_gb": 3.5,
+      "is_multimodal": true
+    },
+    "fast": {
+      "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
+      "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
+      "mmproj_file": "mmproj-BF16.gguf",
+      "alias": "fast",
+      "memory_gb": 5.5,
+      "is_multimodal": true
+    },
+    "coder": {
+      "hf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "gguf_file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+      "alias": "coder",
+      "memory_gb": 5
+    }
+  },
+  "default_model": "fast"
 }
 ```
 
@@ -587,6 +666,10 @@ python -m vllm.entrypoints.openai.api_server \
 │   ├── mcp_router.py           # MCP 服务入口
 │   ├── router.py               # 模型路由
 │   ├── executor.py             # 任务执行器
+│   ├── backends/               # 后端实现
+│   │   ├── __init__.py         # 后端检测
+│   │   ├── mlx_backend.py      # MLX 后端 (Apple Silicon)
+│   │   └── llamacpp_backend.py # llama.cpp 后端 (Intel Mac/Linux)
 │   ├── knowledge_base_chroma.py # ChromaDB 知识库
 │   ├── vl_grounding.py         # VL 视觉定位
 │   ├── android_ui_automation.py # Android 自动化
@@ -601,6 +684,7 @@ python -m vllm.entrypoints.openai.api_server \
 | 数据 | 位置 |
 |------|------|
 | MLX 模型 | `~/.cache/huggingface/hub/` |
+| GGUF 模型 | `~/.cache/huggingface/hub/models--*/snapshots/` |
 | 知识库 | `~/.claude/knowledge_chroma/` |
 
 ### MCP API 文档
@@ -656,9 +740,25 @@ python -m vllm.entrypoints.openai.api_server \
 
 ### 常见问题
 
+**Q: MCP 配置不生效？**
+
+手动配置 MCP：
+```bash
+claude mcp remove local-commander-router 2>/dev/null
+claude mcp add \
+  -e "LOCAL_COMMANDER_PATH=$HOME/.claude/skills/local-commander" \
+  -e "LOCAL_COMMANDER_BACKEND=llamacpp" \
+  -- local-commander-router python3 "$HOME/.claude/skills/local-commander/lib/mcp_router.py"
+```
+
 **Q: 模型下载慢？**
 ```bash
 HF_ENDPOINT=https://hf-mirror.com huggingface-cli download <model>
+```
+
+**Q: Intel Mac llama.cpp 安装失败？**
+```bash
+brew install llama.cpp
 ```
 
 **Q: 内存不足？**
