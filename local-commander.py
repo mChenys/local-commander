@@ -726,12 +726,16 @@ def main():
 
     task = ' '.join(args.task)
 
-    # 路由模型
+    # 检测后端类型
+    from lib.backends import detect_backend
+    backend_type = detect_backend()
+
+    # 路由模型（传入后端类型过滤）
     router = get_router()
     if args.model:
         model = router._get_model_by_alias(args.model)
     else:
-        model = router.route(task)
+        model = router.route(task, backend=backend_type)
 
     model_id = model['id']
     model_alias = model['alias']
