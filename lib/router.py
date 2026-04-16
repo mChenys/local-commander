@@ -77,6 +77,13 @@ class ModelRouter:
 
         info = self.models[model_key].copy()
         info["key"] = model_key
+
+        # 确保 id 字段存在
+        # 对于 GGUF 模型，id 可能是 hf_repo；对于 MLX 模型，id 是模型 ID
+        if "id" not in info or not info["id"]:
+            # 如果没有 id，使用 hf_repo 或 key 作为后备
+            info["id"] = info.get("hf_repo", model_key)
+
         return info
 
     def list_models(self) -> list:
