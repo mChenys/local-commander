@@ -125,72 +125,69 @@ def save_code_to_project(code_blocks: list, work_dir: Path, project_info: dict) 
     return saved_files
 
 
+def call_local_model(model_id: str, prompt: str, max_tokens: int = 4096, temp: float = 0.7, model_alias: str = None) -> str:
+    """调用本地模型（自动选择 MLX 或 llama.cpp 后端）"""
+    from lib.backends import detect_backend, get_backend
+
+    backend_type = detect_backend()
+    backend = get_backend()
+
+    # 确定模型 ID
+    if model_alias and ":" in model_id:
+        # 格式: owner/model:file.gguf -> 提取文件名作为模型别名
+        pass
+
+    success, output, metadata = backend.execute_text(
+        model_id=model_id,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        temperature=temp
+    )
+
+    if not success:
+        raise RuntimeError(f"模型执行失败: {output}")
+
+    return output
+
+
+# 保留旧函数名兼容
 def call_mlx_model(model_id: str, prompt: str, max_tokens: int = 4096, temp: float = 0.7) -> str:
-    """调用 MLX 模型"""
-    import subprocess
-
-    # 根据模型类型选择 prompt 格式
-    if 'gemma' in model_id.lower():
-        # Gemma 格式
-        full_prompt = f'<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n'
-    else:
-        # Qwen 格式
-        full_prompt = f'<|im_start|>system\nYou are a helpful assistant. 回复要简洁专业。<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n'
-
-    result = subprocess.run([
-        'mlx_lm.generate',
-        '--model', model_id,
-        '--prompt', full_prompt,
-        '--max-tokens', str(max_tokens),
-        '--temp', str(temp)
-    ], capture_output=True, text=True, timeout=120)
-
-    # 解析输出
-    output = result.stdout
-    lines = output.split('\n')
-    in_content = False
-    content_lines = []
-    for line in lines:
-        if '==========' in line:
-            in_content = not in_content
-            continue
-        if in_content:
-            content_lines.append(line)
-
-    return '\n'.join(content_lines).strip() if content_lines else output
+    """调用模型（兼容旧接口）"""
+    return call_local_model(model_id, prompt, max_tokens, temp)
 
 
 def call_vl_model(model_id: str, image_path: str, prompt: str, max_tokens: int = 4096) -> str:
-    """调用视觉模型"""
-    import subprocess
+    """调用视觉模型（自动选择后端）"""
+    from lib.backends import detect_backend, get_backend
 
-    python_path = os.path.expanduser('~/.local/pipx/venvs/mlx-vlm/bin/python')
+    backend_type = detect_backend()
+    backend = get_backend()
 
-    script = f'''
-import sys
-sys.path.insert(0, "{SCRIPT_DIR}")
-from mlx_vlm import load, generate
-from mlx_vlm.prompt_utils import apply_chat_template
-from mlx_vlm.utils import load_config
+    # 确定视觉模型
+    # 如果 model_id 不包含视觉模型信息，使用默认的
+    if ":" not in model_id:
+        # 尝试从配置获取视觉模型
+        model_id = "vl"  # 使用别名
 
-model_path = "{model_id}"
-model, processor = load(model_path)
-config = load_config(model_path)
+    success, output, metadata = backend.execute_vision(
+        model_id=model_id,
+        image_path=image_path,
+        prompt=prompt,
+        max_tokens=max_tokens
+    )
 
-messages = [
-    {{"role": "user", "content": [
-        {{"type": "image", "image": "{image_path}"}},
-        {{"type": "text", "text": "{prompt}"}}
-    ]}}
-]
+    if not success:
+        # 如果失败，尝试使用 MCP 路由的视觉检测
+        try:
+            from lib.mcp_router import vl_detect_element
+            result = vl_detect_element(image_path, prompt)
+            if result:
+                return result.get("description", output)
+        except:
+            pass
+        raise RuntimeError(f"视觉模型执行失败: {output}")
 
-formatted_prompt = apply_chat_template(processor, config, messages, num_images=1)
-output = generate(model, processor, formatted_prompt, image=["{image_path}"], max_tokens={max_tokens}, temperature=0.1, verbose=False)
-print(output if isinstance(output, str) else str(output))
-'''
-
-    result = subprocess.run([python_path, '-c', script], capture_output=True, text=True, timeout=180)
-    return result.stdout.strip() if result.stdout else result.stderr
+    return output
 
 
 def show_help():

@@ -2,7 +2,7 @@
 name: local
 description: >
   本地模型指挥官 - 让你拥有一个本地 AI 团队。
-  调用本地 MLX 模型执行代码生成、图像分析等任务，实现 90%+ Token 节省。
+  自动适配 Apple Silicon (MLX) 和 Intel Mac (llama.cpp)，调用本地模型执行代码生成、图像分析等任务，实现 90%+ Token 节省。
 
   激活: /local
   退出: /local exit
@@ -20,6 +20,10 @@ description: >
   🆕 MCP 自动路由:
   - 通过 MCP 服务自动识别任务类型
   - 无需手动指定模型
+
+  平台支持:
+  - Apple Silicon Mac: 使用 MLX 后端 (GPU 加速)
+  - Intel Mac / Linux: 使用 llama.cpp 后端 (GGUF 模型)
 ---
 
 # Local Commander - 本地模型指挥官

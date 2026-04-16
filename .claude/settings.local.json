@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__local-commander-router__android_screenshot",
+      "mcp__local-commander-router__execute_local",
+      "mcp__local-commander-router__ui_analyze_page",
+      "mcp__local-commander-router__ui_screenshot",
+      "mcp__local-commander-router__ui_test_pages",
+      "mcp__local-commander-router__ui_click_and_verify"
+    ]
+  }
+}
