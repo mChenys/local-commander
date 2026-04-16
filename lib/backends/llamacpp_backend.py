@@ -163,17 +163,36 @@ class LlamaCppBackend(Backend):
         获取 GGUF 模型的本地路径
 
         Args:
-            model_key: 模型键名 (coder, vl, etc.)
+            model_key: 模型键名 (coder, vl, etc.) 或 HF repo 名称
 
         Returns:
             模型文件路径，如果不存在返回 None
         """
         model_info = self.GGUF_MODEL_MAP.get(model_key)
+
+        # 如果不是模型键名，尝试通过 HF repo 匹配
+        if not model_info:
+            for key, info in self.GGUF_MODEL_MAP.items():
+                if info.get("hf_repo") == model_key:
+                    model_info = info
+                    break
+
+        # 也尝试从配置中查找
+        if not model_info and self.config:
+            models = self.config.get("models", {})
+            for key, info in models.items():
+                if info.get("hf_repo") == model_key or key == model_key:
+                    model_info = info
+                    break
+
         if not model_info:
             return None
 
-        hf_repo = model_info["hf_repo"]
-        gguf_file = model_info["gguf_file"]
+        hf_repo = model_info.get("hf_repo")
+        gguf_file = model_info.get("gguf_file")
+
+        if not hf_repo or not gguf_file:
+            return None
 
         # 检查 HuggingFace 缓存
         cache_name = hf_repo.replace("/", "--")
@@ -181,15 +200,12 @@ class LlamaCppBackend(Backend):
 
         if cache_path.exists():
             # 查找 GGUF 文件
-            for blob_dir in cache_path.glob("blobs/*"):
-                if blob_dir.is_file():
-                    # 检查文件名
-                    snapshots_dir = cache_path / "snapshots"
-                    if snapshots_dir.exists():
-                        for snapshot in snapshots_dir.iterdir():
-                            gguf_path = snapshot / gguf_file
-                            if gguf_path.exists():
-                                return str(gguf_path)
+            snapshots_dir = cache_path / "snapshots"
+            if snapshots_dir.exists():
+                for snapshot in snapshots_dir.iterdir():
+                    gguf_path = snapshot / gguf_file
+                    if gguf_path.exists():
+                        return str(gguf_path)
 
         # 检查自定义路径
         if self.config:

@@ -26,7 +26,6 @@
       "is_multimodal": true
     },
     "coder": {
-      "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
       "hf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
       "gguf_file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
       "alias": "coder",
@@ -47,7 +46,6 @@
       "is_multimodal": false
     },
     "vl": {
-      "id": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
       "hf_repo": "unsloth/gemma-4-E4B-it-GGUF",
       "gguf_file": "gemma-4-E4B-it-Q4_K_M.gguf",
       "mmproj_file": "mmproj-gemma-4-E4B-it-f16.gguf",
