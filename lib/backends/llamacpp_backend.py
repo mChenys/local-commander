@@ -82,8 +82,18 @@ class LlamaCppBackend(Backend):
         self._llama_cli = self._find_llama_cli()
 
     def _find_llama_cli(self) -> str:
-        """查找 llama-cli 命令"""
-        # 常见的 llama-cli 路径
+        """查找 llama 命令 (优先使用 llama-simple，因为它更适合非交互式调用)"""
+        # 优先使用 llama-simple (非交互式，自动退出)
+        simple_candidates = [
+            "llama-simple",
+            "/usr/local/bin/llama-simple",
+            "/opt/homebrew/bin/llama-simple",
+        ]
+        for cmd in simple_candidates:
+            if shutil.which(cmd):
+                return cmd
+
+        # 后备使用 llama-cli
         candidates = [
             "llama-cli",
             "llama",
@@ -104,7 +114,7 @@ class LlamaCppBackend(Backend):
             if main_bin.exists():
                 return str(main_bin)
 
-        return "llama-cli"  # 默认值，可能需要安装
+        return "llama-simple"  # 默认值
 
     def get_info(self) -> BackendInfo:
         """获取 llama.cpp 后端信息"""
@@ -199,7 +209,12 @@ class LlamaCppBackend(Backend):
         cache_path = self._hf_cache / f"models--{cache_name}"
 
         if cache_path.exists():
-            # 查找 GGUF 文件
+            # 先检查根目录（huggingface-cli --local-dir 模式）
+            gguf_path = cache_path / gguf_file
+            if gguf_path.exists():
+                return str(gguf_path)
+
+            # 再检查 snapshots 目录（huggingface-hub 默认模式）
             snapshots_dir = cache_path / "snapshots"
             if snapshots_dir.exists():
                 for snapshot in snapshots_dir.iterdir():
@@ -225,7 +240,7 @@ class LlamaCppBackend(Backend):
         temperature: float = 0.7,
         **kwargs
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        """使用 llama-cli 执行文本模型"""
+        """使用 llama-cli 或 llama-simple 执行文本模型"""
         formatted_prompt = self.format_prompt(prompt, model_id)
 
         # 获取模型路径
@@ -234,32 +249,48 @@ class LlamaCppBackend(Backend):
             # 可能是模型键名
             model_path = self._get_model_path(model_id)
             if not model_path:
-                return False, f"模型不存在: {model_id}", {"backend": "llamacpp"}
+                return False, self.get_download_hint(model_id), {"backend": "llamacpp"}
 
         # 检测是否支持 Metal GPU (macOS)
         import platform
         use_gpu = platform.system() == "Darwin"
         gpu_layers = "99" if use_gpu else "0"  # Apple Silicon 使用全部 GPU layers
 
-        cmd = [
-            self._llama_cli,
-            "-m", model_path,
-            "-p", formatted_prompt,
-            "-n", str(max_tokens),
-            "--temp", str(temperature),
-            "-ngl", gpu_layers,  # GPU layers (Metal 加速)
-            "-c", "4096",  # 上下文长度
-            "--single-turn",  # 单次执行后退出，不进入交互模式
-            "-r", "<|im_end|>",  # 停止词
-            "-r", "<|eot_id|>",
-            "-r", "</s>",
-        ]
+        # 检测是否是 llama-simple
+        is_simple = "simple" in self._llama_cli
+
+        if is_simple:
+            # llama-simple 参数格式: -m model [-n n_predict] [-ngl n_gpu_layers] [prompt]
+            # llama-simple 不处理格式标签，直接使用原始 prompt
+            cmd = [
+                self._llama_cli,
+                "-m", model_path,
+                "-n", str(max_tokens),
+                "-ngl", gpu_layers,
+                prompt  # 使用原始 prompt，不添加格式标签
+            ]
+        else:
+            # llama-cli 参数格式
+            cmd = [
+                self._llama_cli,
+                "-m", model_path,
+                "-p", formatted_prompt,
+                "-n", str(max_tokens),
+                "--temp", str(temperature),
+                "-ngl", gpu_layers,  # GPU layers (Metal 加速)
+                "-c", "4096",  # 上下文长度
+                "--single-turn",  # 单次执行后退出，不进入交互模式
+                "-r", "<|im_end|>",  # 停止词
+                "-r", "<|eot_id|>",
+                "-r", "</s>",
+            ]
 
         metadata = {
             "backend": "llamacpp",
             "model": model_id,
             "model_path": model_path,
-            "type": "text"
+            "type": "text",
+            "cli_type": "llama-simple" if is_simple else "llama-cli"
         }
 
         try:
@@ -321,13 +352,19 @@ class LlamaCppBackend(Backend):
             cache_name = hf_repo.replace("/", "--")
             cache_path = self._hf_cache / f"models--{cache_name}"
             if cache_path.exists():
-                snapshots_dir = cache_path / "snapshots"
-                if snapshots_dir.exists():
-                    for snapshot in snapshots_dir.iterdir():
-                        mmproj_candidate = snapshot / mmproj_file
-                        if mmproj_candidate.exists():
-                            mmproj_path = str(mmproj_candidate)
-                            break
+                # 先检查根目录（huggingface-cli --local-dir 模式）
+                mmproj_candidate = cache_path / mmproj_file
+                if mmproj_candidate.exists():
+                    mmproj_path = str(mmproj_candidate)
+                else:
+                    # 再检查 snapshots 目录（huggingface-hub 默认模式）
+                    snapshots_dir = cache_path / "snapshots"
+                    if snapshots_dir.exists():
+                        for snapshot in snapshots_dir.iterdir():
+                            mmproj_candidate = snapshot / mmproj_file
+                            if mmproj_candidate.exists():
+                                mmproj_path = str(mmproj_candidate)
+                                break
 
         if not model_path or not Path(model_path).exists():
             return False, f"视觉模型不存在: {model_id}", {"backend": "llamacpp"}
@@ -452,38 +489,75 @@ class LlamaCppBackend(Backend):
         model_path = self._get_model_path(model_id)
         return model_path is not None
 
+    def check_available_models(self) -> List[str]:
+        """检查哪些模型已下载"""
+        available = []
+        for alias in self.GGUF_MODEL_MAP.keys():
+            if self._get_model_path(alias):
+                available.append(alias)
+        return available
+
+    def get_download_hint(self, model_key: str) -> str:
+        """获取模型下载提示"""
+        model_info = self.GGUF_MODEL_MAP.get(model_key)
+        if not model_info:
+            return f"未知的模型: {model_key}"
+
+        hf_repo = model_info.get("hf_repo")
+        gguf_file = model_info.get("gguf_file")
+        return f"模型 '{model_key}' 未找到。\n请运行: huggingface-cli download {hf_repo} {gguf_file}"
+
     def list_models(self) -> List[Dict[str, Any]]:
         """列出本地缓存的 GGUF 模型"""
         models = []
+        seen_paths = set()  # 用于去重
 
         # 从配置中获取模型
         if self.config:
             for key, info in self.config.get("models", {}).items():
                 path = self._get_model_path(key)
                 if path:
-                    models.append({
-                        "key": key,
-                        "alias": info.get("alias", key),
-                        "path": path,
-                        "backend": "llamacpp",
-                        "memory_gb": info.get("memory_gb")
-                    })
+                    path_str = str(path)
+                    if path_str not in seen_paths:
+                        seen_paths.add(path_str)
+                        models.append({
+                            "key": key,
+                            "alias": info.get("alias", key),
+                            "path": path_str,
+                            "backend": "llamacpp",
+                            "memory_gb": info.get("memory_gb")
+                        })
 
         # 扫描 HuggingFace 缓存中的 GGUF 文件
         if self._hf_cache.exists():
             for model_dir in self._hf_cache.iterdir():
                 if model_dir.is_dir() and model_dir.name.startswith("models--"):
-                    # 查找 GGUF 文件
+                    # 先检查根目录（huggingface-cli --local-dir 模式）
+                    for gguf_file in model_dir.glob("*.gguf"):
+                        if "mmproj" not in gguf_file.name.lower():
+                            path_str = str(gguf_file)
+                            if path_str not in seen_paths:
+                                seen_paths.add(path_str)
+                                models.append({
+                                    "id": gguf_file.name,
+                                    "path": path_str,
+                                    "backend": "llamacpp"
+                                })
+
+                    # 再检查 snapshots 目录（huggingface-hub 默认模式）
                     snapshots_dir = model_dir / "snapshots"
                     if snapshots_dir.exists():
                         for snapshot in snapshots_dir.iterdir():
                             for gguf_file in snapshot.glob("*.gguf"):
                                 if "mmproj" not in gguf_file.name.lower():
-                                    models.append({
-                                        "id": gguf_file.name,
-                                        "path": str(gguf_file),
-                                        "backend": "llamacpp"
-                                    })
+                                    path_str = str(gguf_file)
+                                    if path_str not in seen_paths:
+                                        seen_paths.add(path_str)
+                                        models.append({
+                                            "id": gguf_file.name,
+                                            "path": path_str,
+                                            "backend": "llamacpp"
+                                        })
 
         return models
 
