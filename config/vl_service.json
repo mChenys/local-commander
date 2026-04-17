@@ -27,9 +27,9 @@
     "local_vl": {
       "enabled": true,
       "priority": 3,
-      "model": "mlx-community/Qwen2.5-VL-7B-Instruct-bf16",
+      "model": "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
       "timeout": 180,
-      "_comment": "本地 MLX VL 模型（bf16 全精度版），精度更高，已下载完成"
+      "_comment": "本地 MLX VL 模型（4bit 量化版），内存占用小，速度快"
     }
   },
 

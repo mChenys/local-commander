@@ -949,6 +949,130 @@ class MCPRouterServer:
                     "required": ["steps"]
                 }
             },
+            # ========== Uiautomator2 增强工具（处理系统弹窗）==========
+            {
+                "name": "u2_init",
+                "description": "初始化 uiautomator2 连接，确保手机上安装了 ATX agent。返回设备信息。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "device_serial": {
+                            "type": "string",
+                            "description": "设备序列号（可选）"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "u2_handle_permission",
+                "description": "处理系统权限弹窗。支持：允许、拒绝、忽略。适用于 Android 原生权限对话框、MIUI 权限弹窗等。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["allow", "deny", "dismiss"],
+                            "description": "操作类型：allow(允许) | deny(拒绝) | dismiss(忽略)",
+                            "default": "allow"
+                        },
+                        "wait_timeout": {
+                            "type": "integer",
+                            "description": "等待弹窗出现的超时时间（秒）",
+                            "default": 5
+                        }
+                    }
+                }
+            },
+            {
+                "name": "u2_smart_tap",
+                "description": "智能点击元素。支持：文本匹配、文本包含、content-desc 匹配、resource-id 匹配。自动等待元素出现。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "搜索关键词（匹配 text/content-desc/resource-id）"
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "description": "等待超时时间（秒）",
+                            "default": 5
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            },
+            {
+                "name": "u2_scroll_and_tap",
+                "description": "滚动查找并点击元素。当元素不在当前屏幕时自动滚动查找。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "搜索关键词"
+                        },
+                        "direction": {
+                            "type": "string",
+                            "enum": ["up", "down"],
+                            "description": "滚动方向",
+                            "default": "down"
+                        },
+                        "max_scrolls": {
+                            "type": "integer",
+                            "description": "最大滚动次数",
+                            "default": 5
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            },
+            {
+                "name": "u2_input_text",
+                "description": "在指定元素中输入文本。自动清空原有内容。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "element_keyword": {
+                            "type": "string",
+                            "description": "元素定位关键词"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "要输入的文本"
+                        },
+                        "clear_first": {
+                            "type": "boolean",
+                            "description": "是否先清空原有内容",
+                            "default": true
+                        }
+                    },
+                    "required": ["element_keyword", "text"]
+                }
+            },
+            {
+                "name": "u2_run_login_test",
+                "description": "运行完整的登录测试流程。自动处理权限弹窗、输入手机号、验证码。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "phone": {
+                            "type": "string",
+                            "description": "手机号"
+                        },
+                        "code": {
+                            "type": "string",
+                            "description": "验证码"
+                        },
+                        "auto_handle_permissions": {
+                            "type": "boolean",
+                            "description": "是否自动处理权限弹窗",
+                            "default": true
+                        }
+                    },
+                    "required": ["phone", "code"]
+                }
+            },
             # ========== VL 视觉定位工具（多级降级：remote_vl -> local_vl -> dump_ui）==========
             {
                 "name": "vl_detect_element",
@@ -1417,6 +1541,61 @@ class MCPRouterServer:
 
             elif tool_name == "android_run_test":
                 result = self._android_run_test(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            # ========== Uiautomator2 增强工具实现 ==========
+            elif tool_name == "u2_init":
+                result = self._u2_init(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            elif tool_name == "u2_handle_permission":
+                result = self._u2_handle_permission(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            elif tool_name == "u2_smart_tap":
+                result = self._u2_smart_tap(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            elif tool_name == "u2_scroll_and_tap":
+                result = self._u2_scroll_and_tap(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            elif tool_name == "u2_input_text":
+                result = self._u2_input_text(args)
+                return self._response(request_id, {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(result, ensure_ascii=False, indent=2)
+                    }]
+                })
+
+            elif tool_name == "u2_run_login_test":
+                result = self._u2_run_login_test(args)
                 return self._response(request_id, {
                     "content": [{
                         "type": "text",
@@ -3689,6 +3868,138 @@ const routes = {routes_json};
             steps = args.get("steps", [])
             result = auto.run_test_sequence(steps)
             return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ========== Uiautomator2 增强工具实现 ==========
+    def _get_u2_automation(self, device_serial: str = None):
+        """获取 uiautomator2 自动化实例"""
+        try:
+            from android_u2_automation import AndroidU2Automation
+            return AndroidU2Automation(device_serial)
+        except ImportError as e:
+            raise RuntimeError(f"uiautomator2 未安装: {e}。请执行: pip install uiautomator2")
+
+    def _u2_init(self, args: dict) -> dict:
+        """初始化 uiautomator2"""
+        try:
+            auto = self._get_u2_automation(args.get("device_serial"))
+            if not auto.ensure_u2_installed():
+                return {
+                    "success": False,
+                    "error": "ATX agent 未安装，请手动执行: python -m uiautomator2 init",
+                    "hint": "也可以在手机上手动安装 com.github.uiautomator"
+                }
+            info = auto.d.info
+            return {
+                "success": True,
+                "device": info.get("serial", ""),
+                "display_width": info.get("displayWidth", 0),
+                "display_height": info.get("displayHeight", 0),
+                "android_version": info.get("version", ""),
+                "brand": info.get("brand", ""),
+                "model": info.get("model", "")
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _u2_handle_permission(self, args: dict) -> dict:
+        """处理系统权限弹窗"""
+        try:
+            auto = self._get_u2_automation()
+            action = args.get("action", "allow")
+            timeout = args.get("wait_timeout", 5)
+
+            success = auto.wait_and_handle_permission(timeout, action)
+            return {
+                "success": success,
+                "action": action,
+                "message": "权限弹窗已处理" if success else "未检测到权限弹窗或处理失败"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _u2_smart_tap(self, args: dict) -> dict:
+        """智能点击元素"""
+        try:
+            auto = self._get_u2_automation()
+            keyword = args.get("keyword", "")
+            timeout = args.get("timeout", 5)
+
+            success = auto.smart_tap(keyword, timeout)
+            return {
+                "success": success,
+                "keyword": keyword,
+                "message": f"已点击 '{keyword}'" if success else f"未找到 '{keyword}' 元素"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _u2_scroll_and_tap(self, args: dict) -> dict:
+        """滚动查找并点击"""
+        try:
+            auto = self._get_u2_automation()
+            keyword = args.get("keyword", "")
+            direction = args.get("direction", "down")
+            max_scrolls = args.get("max_scrolls", 5)
+
+            success = auto.scroll_and_tap(keyword, direction, max_scrolls)
+            return {
+                "success": success,
+                "keyword": keyword,
+                "direction": direction,
+                "message": f"滚动后点击 '{keyword}'" if success else f"滚动 {max_scrolls} 次后未找到 '{keyword}'"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _u2_input_text(self, args: dict) -> dict:
+        """在元素中输入文本"""
+        try:
+            auto = self._get_u2_automation()
+            element_keyword = args.get("element_keyword", "")
+            text = args.get("text", "")
+            clear_first = args.get("clear_first", True)
+
+            success = auto.input_text(element_keyword, text, clear_first)
+            return {
+                "success": success,
+                "element": element_keyword,
+                "text": text,
+                "message": f"已输入 '{text}'" if success else f"无法在 '{element_keyword}' 中输入"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _u2_run_login_test(self, args: dict) -> dict:
+        """运行完整登录测试流程"""
+        try:
+            auto = self._get_u2_automation()
+            phone = args.get("phone", "")
+            code = args.get("code", "")
+            auto_handle = args.get("auto_handle_permissions", True)
+
+            steps = [
+                {"action": "tap", "keyword": "用 电话 继续", "timeout": 5},
+                {"action": "wait", "seconds": 1},
+                {"action": "input", "element": "手机号", "text": phone},
+                {"action": "tap", "keyword": "继续", "timeout": 3},
+                {"action": "wait_for", "keyword": "验证码", "timeout": 10},
+                {"action": "input", "element": "验证码", "text": code},
+                {"action": "tap", "keyword": "登录", "timeout": 3},
+                {"action": "wait_for", "keyword": "消息", "timeout": 15},
+                {"action": "screenshot"}
+            ]
+
+            result = auto.run_test_sequence(steps, auto_handle_permissions=auto_handle)
+            return {
+                "success": result.get("failed") == 0,
+                "phone": phone,
+                "total_steps": result.get("total", 0),
+                "passed": result.get("passed", 0),
+                "failed": result.get("failed", 0),
+                "steps": result.get("steps", [])
+            }
         except Exception as e:
             return {"success": False, "error": str(e)}
 

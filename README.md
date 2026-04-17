@@ -380,25 +380,6 @@ mcp__local-commander-router__ui_test_pages({
     "page_names": ["首页", "任务管理", "设置"]
 })
 
-# SPA 路由测试
-mcp__local-commander-router__ui_test_spa({
-    "url": "http://localhost:1420",
-    "routes": [
-        {"name": "任务", "menu_text": "任务", "expected_elements": ["新建任务"]},
-        {"name": "日志", "menu_text": "日志", "expected_elements": ["导出"]}
-    ]
-})
-
-# 交互测试
-mcp__local-commander-router__ui_interact({
-    "url": "http://localhost:3000",
-    "steps": [
-        {"action": "fill", "selector": "#username", "value": "admin"},
-        {"action": "click", "selector": "button[type=submit]"},
-        {"action": "assert_text", "selector": ".welcome", "value": "欢迎"}
-    ]
-})
-
 # 截图
 mcp__local-commander-router__ui_screenshot({
     "url": "http://localhost:3000",
@@ -408,26 +389,122 @@ mcp__local-commander-router__ui_screenshot({
 
 ### Android 自动化
 
-**零依赖方案**：无需 Appium，直接使用 ADB。
+#### 方案对比
 
-#### 技术架构
+| 方案 | 启动耗时 | 权限弹窗 | 视觉识别 | 安装依赖 |
+|------|---------|---------|---------|---------|
+| **uiautomator2 (推荐)** | ~2s | ✅ 内置 | ✅ VL协同 | 仅 Python |
+| Appium | 10-30s | ⚠️ 需配置 | ❌ 需额外 | Node.js + Server |
+
+**为什么不需要 Appium？**
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  AndroidUIAutomation                     │
-├─────────────────────────────────────────────────────────┤
-│  基础操作                                                │
-│  tap(x, y) | swipe() | input_text() | press_key()       │
-├─────────────────────────────────────────────────────────┤
-│  元素定位                                                │
-│  dump_ui() | find_element() | smart_find()              │
-├─────────────────────────────────────────────────────────┤
-│  高级操作                                                │
-│  tap_element() | scroll_and_find() | run_test_sequence()│
-└─────────────────────────────────────────────────────────┘
+Appium 架构:                          uiautomator2 架构:
+Python → Appium Client →              Python → uiautomator2 →
+Appium Server (Node.js) →             ATX Agent → Android
+UiAutomator2 → Android                (直接连接，无中间层)
+(多层架构，启动慢)                      (单层架构，启动快)
 ```
 
-#### MCP 调用
+#### 安装依赖
+
+```bash
+# 安装 uiautomator2
+pip3 install uiautomator2
+
+# 在手机上安装 ATX Agent（首次需要）
+python3 -m uiautomator2 init
+```
+
+#### 混合自动化架构
+
+**核心原则：uiautomator2 优先，VL 视觉模型降级辅助**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          元素定位请求                                    │
+│                    hybrid_tap("登录按钮")                                │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  Step 1: uiautomator2 定位     │
+                    │  耗时: ~0.3s                   │
+                    │                               │
+                    │  ① d(text="登录")             │
+                    │  ② d(textContains="登录")     │
+                    │  ③ d(description="登录")      │
+                    │  ④ d(resourceId="btn_login")  │
+                    └───────────────────────────────┘
+                           │              │
+                        找到 ✅          未找到 ❌
+                           │              │
+                           ▼              ▼
+                    ┌──────────┐   ┌───────────────────────────────┐
+                    │ 返回结果  │   │  Step 2: VL 视觉定位 (降级)   │
+                    │ 点击元素  │   │  耗时: ~15-20s                 │
+                    └──────────┘   │                               │
+                                   │  ① 截图当前屏幕                │
+                                   │  ② VL 分析："找出登录按钮位置" │
+                                   │  ③ 返回坐标 (x, y)            │
+                                   │  ④ 点击坐标                    │
+                                   └───────────────────────────────┘
+```
+
+#### 适用场景分工
+
+| 场景 | 主力工具 | 耗时 | 原因 |
+|------|---------|------|------|
+| 有文本的按钮 | uiautomator2 | ~0.3s | 快速、精确 |
+| 有 resource-id | uiautomator2 | ~0.3s | 稳定可靠 |
+| **系统权限弹窗** | uiautomator2 | <0.5s | 结构化定位，不受 UI 样式影响 |
+| 滚动查找元素 | uiautomator2 | ~2s | 内置滚动支持 |
+| **图标按钮（无文字）** | VL 视觉 | ~20s | u2 无法定位 |
+| **自定义控件** | VL 视觉 | ~20s | 没有 ID/文本 |
+| UI 验证截图 | VL 视觉 | ~20s | 需要语义理解 |
+
+#### Uiautomator2 MCP 工具
+
+```python
+# 初始化连接
+mcp__local-commander-router__u2_init({})
+# 返回: {"success": true, "device": "xxx", "display_width": 1080, ...}
+
+# 处理系统权限弹窗（核心功能）
+mcp__local-commander-router__u2_handle_permission({
+    "action": "allow",        # allow | deny | dismiss
+    "wait_timeout": 5
+})
+
+# 智能点击元素（自动等待）
+mcp__local-commander-router__u2_smart_tap({
+    "keyword": "登录",
+    "timeout": 5
+})
+
+# 滚动查找并点击
+mcp__local-commander-router__u2_scroll_and_tap({
+    "keyword": "登出",
+    "direction": "down",      # up | down
+    "max_scrolls": 5
+})
+
+# 输入文本
+mcp__local-commander-router__u2_input_text({
+    "element_keyword": "手机号",
+    "text": "18819444345",
+    "clear_first": true
+})
+
+# 完整登录测试（自动处理权限）
+mcp__local-commander-router__u2_run_login_test({
+    "phone": "18819444345",
+    "code": "112233",
+    "auto_handle_permissions": true
+})
+```
+
+#### 原始 ADB 工具（兼容旧方案）
 
 ```python
 # 获取 UI 元素
@@ -435,9 +512,9 @@ mcp__local-commander-router__android_dump_ui({})
 
 # 点击元素（支持多种定位方式）
 mcp__local-commander-router__android_tap({
-    "text": "登录",                    # 通过文本
-    "resource_id": "btn_login",        # 通过 resource-id
-    "content_desc": "登录按钮"          # 通过 content-desc
+    "text": "登录",
+    "resource_id": "btn_login",
+    "content_desc": "登录按钮"
 })
 
 # 截图
@@ -449,31 +526,35 @@ mcp__local-commander-router__android_screenshot({
 mcp__local-commander-router__android_run_test({
     "steps": [
         {"action": "tap", "element": {"text": "设置"}},
-        {"action": "screenshot"},
-        {"action": "swipe", "x1": 540, "y1": 1500, "x2": 540, "y2": 800},
-        {"action": "tap", "element": {"text": "English"}},
-        {"action": "assert_element", "element": {"text": "Language"}},
-        {"action": "back"},
-        {"action": "wait", "seconds": 1}
+        {"action": "smart_tap", "keyword": "English"},
+        {"action": "scroll_and_tap", "keyword": "登出"},
+        {"action": "screenshot"}
     ]
 })
 ```
 
-#### 支持的操作
+#### Python 直接调用
 
-| 操作 | 参数 | 说明 |
-|------|------|------|
-| `tap` | `element` | 点击元素 |
-| `tap_coords` | `x`, `y` | 点击坐标 |
-| `smart_tap` | `keyword` | 智能查找点击 |
-| `scroll_and_tap` | `keyword` | 滚动查找点击 |
-| `input` | `text` | 输入文本 |
-| `swipe` | `x1,y1,x2,y2` | 滑动 |
-| `back` / `home` | - | 按键 |
-| `screenshot` | `save_path` | 截图 |
-| `wait` | `seconds` | 等待 |
-| `assert_element` | `element` | 断言元素 |
-| `assert_text` | `text` | 断言文本 |
+```python
+import uiautomator2 as u2
+
+d = u2.connect()
+
+# 基础操作
+d(text="登录").click()
+d(resourceId="btn_login").click()
+d(description="允许").click()  # 权限弹窗
+
+# 滚动查找
+d(scrollable=True).scroll.to(text="登出")
+d(text="登出").click()
+
+# 输入
+d(resourceId="input").set_text("hello")
+
+# 等待
+d(text="加载完成").wait(timeout=10)
+```
 
 ### VL 视觉定位
 
@@ -488,57 +569,37 @@ dump_ui (ADB精确) → remote_vl (局域网) → local_vl (本地MLX)
 |------|------|------|----------|
 | `dump_ui` | ⭐⭐⭐⭐⭐ | ~100ms | 文本元素、标准 UI |
 | `remote_vl` | ⭐⭐⭐⭐ | ~0.6s | WebView、Canvas、图形 |
-| `local_vl` | ⭐⭐⭐ | ~30s | 离线场景 |
+| `local_vl` | ⭐⭐⭐ | ~15s | 离线场景 |
 
-#### MCP 调用
+#### VL 视觉分析
 
 ```python
-# 检测元素
-mcp__local-commander-router__vl_detect_element({
-    "image_path": "/tmp/screenshot.png",
-    "prompt": "蓝色的登录按钮"
-})
-# 返回: {"elements": [{"label": "登录按钮", "bbox": [...], "center": [x, y]}]}
+# UI 验证 - 检查网络状态
+vl.detect_element(screenshot, "页面顶部是否有断网提示？")
 
-# 获取点击坐标
-mcp__local-commander-router__vl_get_click_coords({
-    "image_path": "/tmp/screenshot.png",
-    "element_desc": "右上角的设置图标"
-})
-# 返回: {"x": 200, "y": 380, "confidence": 0.96}
+# OCR 文字提取
+vl.detect_element(screenshot, "提取页面上的所有文字")
 
-# 智能定位（优先 dump_ui）
-mcp__local-commander-router__vl_smart_locate({
-    "image_path": "/tmp/screenshot.png",
-    "element_desc": "登录",
-    "prefer_dump_ui": true
-})
-
-# 调试模式
-mcp__local-commander-router__vl_debug_detect({
-    "image_path": "/tmp/screenshot.png",
-    "prompt": "登录按钮",
-    "output_path": "/tmp/debug.png"
-})
+# 元素坐标定位
+vl.detect_element(screenshot, "找出蓝色发送按钮的位置")
+# 返回: {"success": true, "center": [x, y]}
 ```
 
-#### 与自动化结合
+#### 与 uiautomator2 协同
 
 ```python
-# Android + VL
-screenshot = mcp__local-commander-router__android_screenshot({})
-coords = mcp__local-commander-router__vl_get_click_coords({
-    "image_path": screenshot["screenshot_path"],
-    "element_desc": "设置按钮"
-})
-mcp__local-commander-router__android_tap({"x": coords["x"], "y": coords["y"]})
+# 推荐：混合自动化，自动降级
+from android_hybrid_automation import AndroidHybridAutomation
 
-# Web + VL
-mcp__local-commander-router__ui_screenshot({"url": "http://localhost:3000"})
-coords = mcp__local-commander-router__vl_get_click_coords({
-    "image_path": "/tmp/ui-screenshot.png",
-    "element_desc": "提交按钮"
-})
+hybrid = AndroidHybridAutomation()
+hybrid.set_vl_service(vl_service)
+
+# 智能点击（先 u2，失败自动降级 VL）
+result = hybrid.hybrid_tap("登录按钮")
+
+# UI 验证
+result = hybrid.check_network_status()  # 检查断网提示
+result = hybrid.check_error_dialog()     # 检查错误弹窗
 ```
 
 ---
@@ -672,7 +733,9 @@ python -m vllm.entrypoints.openai.api_server \
 │   │   └── llamacpp_backend.py # llama.cpp 后端 (Intel Mac/Linux)
 │   ├── knowledge_base_chroma.py # ChromaDB 知识库
 │   ├── vl_grounding.py         # VL 视觉定位
-│   ├── android_ui_automation.py # Android 自动化
+│   ├── android_ui_automation.py # Android 自动化 (ADB)
+│   ├── android_u2_automation.py # Android 自动化 (uiautomator2) ⭐ 新增
+│   ├── android_hybrid_automation.py # 混合自动化 (u2 + VL) ⭐ 新增
 │   └── testers/                # 测试器
 └── config/
     ├── models.json             # 模型配置
@@ -728,6 +791,12 @@ python -m vllm.entrypoints.openai.api_server \
 | `android_tap` | 点击元素 |
 | `android_screenshot` | 截图 |
 | `android_run_test` | 运行测试序列 |
+| **`u2_init`** | 初始化 uiautomator2 连接 ⭐ |
+| **`u2_handle_permission`** | 处理系统权限弹窗 ⭐ |
+| **`u2_smart_tap`** | 智能点击元素 ⭐ |
+| **`u2_scroll_and_tap`** | 滚动查找并点击 ⭐ |
+| **`u2_input_text`** | 输入文本 ⭐ |
+| **`u2_run_login_test`** | 完整登录测试 ⭐ |
 
 #### VL 视觉定位
 
@@ -778,6 +847,26 @@ pip3 install --break-system-packages --upgrade chromadb
 **Q: VL 服务连接失败？**
 - 检查 `config/vl_service.json` 中的 `base_url`
 - 确保 vLLM 服务已启动
+
+**Q: uiautomator2 连接失败？**
+```bash
+# 重新安装 ATX Agent
+python3 -m uiautomator2 init
+
+# 检查设备连接
+adb devices
+```
+
+**Q: 系统权限弹窗处理不了？**
+- 使用 `u2_handle_permission` 工具
+- 确保 uiautomator2 已正确初始化
+- 对于特殊厂商弹窗，可能需要自定义处理逻辑
+
+**Q: 需要安装 Appium 吗？**
+- **不需要！** uiautomator2 已足够强大
+- uiautomator2 启动更快（~2s vs Appium 10-30s）
+- 权限弹窗处理更简单
+- 与 VL 视觉模型协同工作
 
 ---
 
